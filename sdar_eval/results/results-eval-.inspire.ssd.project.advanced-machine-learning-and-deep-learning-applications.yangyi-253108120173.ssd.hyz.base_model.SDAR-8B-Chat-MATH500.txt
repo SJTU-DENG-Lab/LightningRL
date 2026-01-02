@@ -1,0 +1,105 @@
+acc: 0.7153333333333334
+avg length: 547.104
+
+==================================================
+Performance Metrics:
+  Total Tokens: 820656
+  Total Generation Time: 479.80s
+  Total Forwards: 339549
+  TPS (Tokens/Second): 1710.41
+  TPF (Tokens/Forward): 2.42
+  Avg Response Length: 547.10
+  Avg Forwards per Sample: 226.37
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766296831.json
+acc: 0.7053333333333334
+avg length: 558.9946666666667
+
+==================================================
+Performance Metrics:
+  Total Tokens: 838492
+  Total Generation Time: 460.83s
+  Total Forwards: 288054
+  TPS (Tokens/Second): 1819.53
+  TPF (Tokens/Forward): 2.91
+  Avg Response Length: 558.99
+  Avg Forwards per Sample: 192.04
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766296944.json
+acc: 0.7273333333333334
+avg length: 548.0166666666667
+
+==================================================
+Performance Metrics:
+  Total Tokens: 822025
+  Total Generation Time: 514.82s
+  Total Forwards: 364000
+  TPS (Tokens/Second): 1596.73
+  TPF (Tokens/Forward): 2.26
+  Avg Response Length: 548.02
+  Avg Forwards per Sample: 242.67
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766297094.json
+acc: 0.6986666666666667
+avg length: 546.54
+
+==================================================
+Performance Metrics:
+  Total Tokens: 819810
+  Total Generation Time: 533.24s
+  Total Forwards: 378763
+  TPS (Tokens/Second): 1537.42
+  TPF (Tokens/Forward): 2.16
+  Avg Response Length: 546.54
+  Avg Forwards per Sample: 252.51
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766297223.json
+acc: 0.7133333333333334
+avg length: 546.7186666666666
+
+==================================================
+Performance Metrics:
+  Total Tokens: 820078
+  Total Generation Time: 897.89s
+  Total Forwards: 824561
+  TPS (Tokens/Second): 913.34
+  TPF (Tokens/Forward): 0.99
+  Avg Response Length: 546.72
+  Avg Forwards per Sample: 549.71
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766297515.json
+acc: 0.73
+avg length: 558.7873333333333
+
+==================================================
+Performance Metrics:
+  Total Tokens: 838181
+  Total Generation Time: 141.27s
+  Total Forwards: 335087
+  TPS (Tokens/Second): 5933.21
+  TPF (Tokens/Forward): 2.50
+  Avg Response Length: 558.79
+  Avg Forwards per Sample: 223.39
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766801010.json
+acc: 0.732
+avg length: 559.112
+
+==================================================
+Performance Metrics:
+  Total Tokens: 838668
+  Total Generation Time: 57.45s
+  Total Forwards: 335151
+  TPS (Tokens/Second): 14598.59
+  TPF (Tokens/Forward): 2.50
+  Avg Response Length: 559.11
+  Avg Forwards per Sample: 223.43
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1766804748.json

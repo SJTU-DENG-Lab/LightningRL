@@ -1,0 +1,15 @@
+{
+  "timestamp": 1766287306.0443351,
+  "dataset": "GSM8K",
+  "model": "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/base_model/SDAR-8B-Chat",
+  "total_samples": 1319,
+  "total_responses": 3957,
+  "total_tokens": 723485,
+  "total_generation_time_seconds": 728.827604932012,
+  "total_forwards": 735355,
+  "tps": 992.6695903175753,
+  "tpf": 0.983858136546294,
+  "mean_response_length": 182.83674500884507,
+  "mean_forwards_per_sample": 185.83649229214052,
+  "accuracy": 0.8976497346474602
+}

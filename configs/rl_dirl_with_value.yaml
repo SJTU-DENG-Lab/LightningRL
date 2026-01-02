@@ -1,0 +1,140 @@
+wandb:
+  entity: null
+  resume: 'auto'
+
+
+
+experiment:
+    project: "rl_dirl_with_value"  # need to be same of this file name
+    function: "train" # no need to change
+    start_from_scratch: True # set to True by default, if you stopped the training, and want to keep training with your ckpt model.optimized_name, set to False, and set current_epoch to the last step you stopped
+    total_step: 300
+    save_every: 10
+    eval_every: 5
+    train_value_every: 1
+    current_epoch: 1
+    deepspeed_file: "1_node_8_gpus"
+    num_node: 1
+    node_index: 0
+    gpu_ids: "0,1,2,3,4,5,6,7"  # specify which GPUs to use, e.g., "0,1,2,3" or "4,5,6,7"
+
+model:
+    pretrained_model: "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/base_model/DiRL-8B-Instruct" # TODO: update to your DiRL model path
+    value_base_model: "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/base_model/DiRL-8B-Instruct" # TODO: update to your DiRL model path
+    optimized_name: "optimized" # the output name for your optimized policy model, will be saved under sft_dream/ckpt
+    optimized_value_name: "optimized_value" # the output name for your optimized value model, will be saved under sft_dream/ckpt
+    model_base: "sdar" # set sdar for TraDo and SDAR
+
+dataset:
+    train_dataset: "MATH_train" # "MATH_train""PrimeIntellect"
+    optimization_data: "rl_data" # name of the rollout data output
+    data_type: "math" # "math" "code" 
+
+# also see explanations in eval configs
+rollout:
+    tensor_parallel_size: 1 # set to 1 by default, if oom, try reduce max_active first, if still oom, set tensor_parallel_size to 8
+    cache_max_entry_count: 0.9
+    max_active: 256
+    num_task_per_step: 128
+    num_response_per_task: 16
+    temperature: 1.0
+    max_token: 8192
+    block_size: 4
+    denoising_steps_per_block: 4
+    top_p: 1.0
+    top_k: 50
+    remasking_strategy: "low_confidence_dynamic" #"low_confidence_static""low_confidence_dynamic"
+    dynamic_threshold: 0.9 # no use for "low_confidence_static"
+    # === DiRL specific settings ===
+    use_system_prompt: true      # DiRL uses system+user+assistant prompt format
+    start_with_think: False       # DiRL starts with <think> tag
+    stop_token_list: ["<|im_end|>", "<|endoftext|>"]  # DiRL stop tokens
+    do_sample: true              # DiRL uses sampling
+    # === Sequential Sampling Settings ===
+    sequential_sampling: True     # True: sequential traversal with cursor, False: random sampling
+    data_filter: True             # True: keep only 0 < mean_correctness < 1, False: only filter all-incorrect
+    sampling_multiplier: 2        # sample N times more data to compensate for DAPO filtering
+
+execute:
+    num_chunk: 128 # batch size of executing codes in coding eval tasks
+
+training:
+    value_pretrain_steps: 50  # pretrain Value Model before RL loop, set to 0 to disable. Each pretrain epoch rollouts fresh data, training continues until reaching this total step count.
+    gradient_checkpointing_enable: True
+    gradient_accumulation_steps: 16
+    batch_size_value: 8      # Value Model batch size (can be larger, less OOM pressure)
+    batch_size_policy: 8      # Policy Model batch size (limited by GPU memory)
+    mixed_precision: "fp16"
+    enable_tf32: True
+    seed: 10086
+    num_train_epochs: 1
+    max_grad_norm: 1.0
+    method: "TraceRL" # "random_masking" "TraceRL" "coupled"
+    block_size: 4
+    shrink: 1
+    post_num: 0
+    max_gen_length: 8192
+    max_prompt_len: 1024
+    eps: 0.20           # clip eps for disadvantage actions (adv < 0)
+    eps_high: 0.28      # clip eps for advantage actions (adv > 0)
+    value_clip_eps: 0.2 # clip eps for value model updates (PPO-style)
+    gam: 1.0
+    lam: 1.0
+    use_kl_estimator_k3: True
+    nll_loss_weight: 0.1       # NLL loss weight for correct samples, 0 to disable
+
+
+dense_reward:
+    enabled: False              # whether to use dense reward
+    alpha_token: 0.01           # TPF speed reward weight (only for correct samples)
+    beta_edit: 0.001             # edit distance inverse reward weight
+
+kl_in_reward:
+    enabled: true              # whether to add KL penalty into reward (before GAE)
+    beta: 0.01                 # KL penalty coefficient
+
+dynamic_lambda:
+    enabled: true              # whether to use length-adaptive lambda
+    alpha: 0.05                # λ = 1 - 1/(α·L), where L is response length
+
+
+optimizer:
+    name: adamw
+    params: # default adamw params
+        policy_learning_rate: 1e-6
+        value_learning_rate: 2e-6
+        scale_lr: False # scale learning rate by total batch size
+        beta1: 0.9
+        beta2: 0.999
+        weight_decay: 0.0
+        epsilon: 1e-8
+
+
+lr_scheduler:
+    scheduler: "constant"
+    params:
+        learning_rate: ${optimizer.params.policy_learning_rate}
+        warmup_steps: 0
+        min_lr_scale: 1.0
+
+
+evaluation:
+    eval_dataset: "MATH500"  # "MATH500" "LiveCodeBench"
+    data_type: "math" # "math" "code"
+    tensor_parallel_size: 1
+    max_active: 256
+    num_response_per_task: 3
+    temperature: 1.0
+    max_token: 8192
+    block_size: 4
+    denoising_steps_per_block: 4
+    top_p: 1.0
+    top_k: [50]
+    remasking_strategy: ["low_confidence_dynamic"] #"low_confidence_static""low_confidence_dynamic"
+    dynamic_threshold: 0.9 # no use for "low_confidence_static"
+    # === DiRL specific settings ===
+    use_system_prompt: true      # DiRL uses system+user+assistant prompt format
+    start_with_think: false      # DiRL starts with <think> tag
+    stop_token_list: ["<|im_end|>", "<|endoftext|>"]  # DiRL stop tokens
+    do_sample: true              # DiRL uses sampling
+

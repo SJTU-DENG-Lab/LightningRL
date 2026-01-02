@@ -1,0 +1,15 @@
+acc: 0.8453373768006065
+avg length: 163.58908263836238
+
+==================================================
+Performance Metrics:
+  Total Tokens: 647322
+  Total Generation Time: 587.47s
+  Total Forwards: 220937
+  TPS (Tokens/Second): 1101.88
+  TPF (Tokens/Forward): 2.93
+  Avg Response Length: 163.59
+  Avg Forwards per Sample: 55.83
+==================================================
+
+Performance stats saved to: ../sdar_eval/results/performance_stats-1765978367.json

@@ -1,0 +1,15 @@
+{
+  "timestamp": 1766039548.122528,
+  "dataset": "GSM8K",
+  "model": "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/Fast-RL/rl_sdar_with_value/ckpt/optimized",
+  "total_samples": 1319,
+  "total_responses": 3957,
+  "total_tokens": 752455,
+  "total_generation_time_seconds": 230.74031745828688,
+  "total_forwards": 140472,
+  "tps": 3261.046913208085,
+  "tpf": 5.356619112705735,
+  "mean_response_length": 190.15794794035887,
+  "mean_forwards_per_sample": 35.49962092494314,
+  "accuracy": 0.7644680313368714
+}

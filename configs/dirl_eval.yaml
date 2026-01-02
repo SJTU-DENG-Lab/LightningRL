@@ -1,0 +1,41 @@
+experiment:
+    project: "dirl_eval" # need to be same of this file name
+    num_node: 1 # the number of machines you have
+    node_index: 0 # no need to change
+    gpu_ids: "0,1,2,3,4,5,6,7"  # specify which GPUs to use, e.g., "0" or "0,1"
+
+
+
+
+model: "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/base_model/DiRL-8B-Instruct" # absolute path of your DiRL model
+model_base: "sdar" # set sdar for TraDo, SDAR, and DiRL
+
+# dataset you want to eval on, you need to download first, you can also modify your own dataset, see instructions in ./data
+dataset:
+    eval_dataset: "GSM8K" #"MBPP""MATH500""GSM8K""AIME2024""GPQA""LiveCodeBench""HumanEval""LiveBench"
+    data_type: "math" #"code""math"
+
+execute:
+    num_chunk: 128
+
+rollout:
+    tensor_parallel_size: 1 # set to 1 by default, if oom, try reduce max_active first, if still oom, set tensor_parallel_size to 8
+    max_active: 256
+    num_response_per_task: 3
+    temperature: 1.0
+    max_token: 8192 # max generation token num
+    block_size: 4
+    denoising_steps_per_block: 4
+    top_p: 1.0
+    top_k: 50
+    remasking_strategy: "low_confidence_dynamic" #"low_confidence_static""low_confidence_dynamic"
+    dynamic_threshold: 0.9
+    output_unmasking_history: True
+    
+    # ========== DiRL specific settings ==========
+    use_system_prompt: true  # DiRL uses system+user+assistant format
+    start_with_think: false   # DiRL models use <think> reasoning format
+    stop_token_list: ["<|im_end|>", "<|endoftext|>"]  # Required for DiRL models
+    do_sample: true  # DiRL uses sampling
+
+

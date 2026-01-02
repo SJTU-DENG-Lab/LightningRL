@@ -1,0 +1,15 @@
+{
+  "timestamp": 1766804748.63228,
+  "dataset": "MATH500",
+  "model": "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/base_model/SDAR-8B-Chat",
+  "total_samples": 500,
+  "total_responses": 1500,
+  "total_tokens": 838668,
+  "total_generation_time_seconds": 57.448575527989306,
+  "total_forwards": 335151,
+  "tps": 14598.58651484571,
+  "tpf": 2.502358638345104,
+  "mean_response_length": 559.112,
+  "mean_forwards_per_sample": 223.434,
+  "accuracy": 0.732
+}
