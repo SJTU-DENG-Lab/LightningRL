@@ -308,7 +308,7 @@ def main():
     num_node = config.experiment.num_node
     node_index = config.experiment.node_index
 
-    if config.experiment.current_epoch == 1:
+    if config.experiment.current_epoch <= 1:
         pretrained_model = config.model.pretrained_model
     else:
         pretrained_model = "../" + project_name + "/ckpt/" + config.model.optimized_name
@@ -327,7 +327,16 @@ def main():
         file_name    = f"../{project_name}/temp_data/outputs-{outputs_name}.json"
 
     with open(file_name, 'r') as f:
-        data = json.load(f)
+        json_content = json.load(f)
+
+    # Handle both old format (list) and new format (dict with metadata)
+    if isinstance(json_content, dict) and "metadata" in json_content:
+        data = json_content["data"]
+        metadata = json_content["metadata"]
+    else:
+        # Old format compatibility
+        data = json_content
+        metadata = None
 
     func_items  = [itm for itm in data if itm.get("test_method","function") == "function"]
     stdio_items = [itm for itm in data if itm.get("test_method") == "stdio"]
@@ -353,7 +362,15 @@ def main():
 
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
     with open(file_name, "w", encoding="utf-8", errors="surrogatepass") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        # Preserve metadata format if it existed
+        if metadata is not None:
+            output_data = {
+                "metadata": metadata,
+                "data": data
+            }
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+        else:
+            json.dump(data, f, indent=2, ensure_ascii=False)
     
 
     

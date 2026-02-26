@@ -18,8 +18,8 @@ if __name__ == "__main__":
     config = get_config()
 
     project_name = config.experiment.project
-    
-    if config.experiment.current_epoch == 1:
+
+    if config.experiment.current_epoch <= 1:
         pretrained_model = config.model.pretrained_model
     else:
         pretrained_model = "../" + project_name + "/ckpt/" + config.model.optimized_name
@@ -49,6 +49,8 @@ if __name__ == "__main__":
         # Old format compatibility
         data = json_content
 
+
+
     def z_score_normalize(lst):
         mean = sum(lst) / len(lst)
         std = (sum((x - mean) ** 2 for x in lst) / len(lst)) ** 0.5
@@ -69,72 +71,102 @@ if __name__ == "__main__":
 
 
 
+    # ===== Reward Configuration =====
+    tpf_coefficient = OmegaConf.select(config, "reward.tpf_coefficient", default=0.1)
+    filter_tpf_threshold = OmegaConf.select(config, "reward.filter_tpf_threshold", default=0.1)
+    filter_all_wrong = OmegaConf.select(config, "reward.filter_all_wrong", default=True)
+    # TPF normalization mode: supports 3 modes (none/z_score/minmax)
+    # Backward compatibility: map legacy tpf_norm boolean to tpf_norm_mode
+    tpf_norm_legacy = OmegaConf.select(config, "reward.tpf_norm", default=None)
+    if tpf_norm_legacy is not None:
+        # Legacy config found: true="z_score", false="none"
+        tpf_norm_mode = "z_score" if tpf_norm_legacy else "none"
+    else:
+        # Use new tpf_norm_mode config
+        tpf_norm_mode = OmegaConf.select(config, "reward.tpf_norm_mode", default="minmax")
+    acc_norm = OmegaConf.select(config, "reward.acc_norm", default=False)
+
     response_length_list = []
+    tpf_list = []  # Collect TPF statistics across all samples
     num_task   = 0
     num_correct_task = 0
     final_data = []
     for i in range(len(data)):
         response_length_list = response_length_list + data[i]["response_length"]
-        correctness_list = data[i]["correctness"]
         lengths = data[i]["response_length"]
-        
-        # Count fully correct samples
-        for corr in correctness_list:
-            num_correct_task += all(corr)
-            num_task += 1
-        
-        # Apply length penalty: mark as failed if too long
-        for j in range(len(lengths)):
-            if OmegaConf.select(config, "rollout.max_gen_length", default=MISSING) is not MISSING and lengths[j] >= config.rollout.max_gen_length - 5:
-                correctness_list[j] = [False] * len(correctness_list[j])
-            if OmegaConf.select(config, "rollout.max_token", default=MISSING) is not MISSING and lengths[j] >= config.rollout.max_token - 5:
-                correctness_list[j] = [False] * len(correctness_list[j])
-        
+
         # Calculate TPF (Tokens Per Forward) for each sample in this prompt
-        tpf_list = []
+        local_tpf_list = []
         for j in range(len(lengths)):
             if "num_forwards" in data[i] and j < len(data[i]["num_forwards"]) and data[i]["num_forwards"][j] > 0:
                 tpf = lengths[j] / data[i]["num_forwards"][j]
             else:
                 tpf = 0.0
-            tpf_list.append(tpf)
-        
-        # Normalize TPF to [0, 1] for this prompt's samples
-        if len(tpf_list) > 0 and max(tpf_list) > 0:
-            min_tpf = min(tpf_list)
-            max_tpf = max(tpf_list)
-            if max_tpf > min_tpf:
-                normalized_tpf = [(tpf - min_tpf) / (max_tpf - min_tpf) for tpf in tpf_list]
-            else:
-                normalized_tpf = [0.5] * len(tpf_list)  # All same, give middle value
+            local_tpf_list.append(tpf)
+            tpf_list.append(tpf)  # Collect for statistics
+
+        # Calculate base rewards from correctness (using pass rate)
+        if acc_norm:
+            # Z-score normalize on pass rates
+            pass_rates = []
+            for x in data[i]["correctness"]:
+                pass_rate = sum(x) / len(x) if len(x) > 0 else 0.0
+                pass_rates.append(pass_rate)
+                num_correct_task += all(x)
+                num_task += 1
+            base_rewards = z_score_normalize(pass_rates)
         else:
-            normalized_tpf = [0.0] * len(tpf_list)
-            min_tpf, max_tpf = 0, 0
-        
-        # Calculate rewards using pass_rate * TPF strategy
-        # If pass_rate > 0: reward = pass_rate * normalized_tpf (multiplication)
-        # If pass_rate == 0: reward = -1 + normalized_tpf * 0.5 (addition, same as math tasks)
-        rewards = []
-        for j in range(len(correctness_list)):
-            if len(correctness_list[j]) > 0:
-                pass_rate = sum(correctness_list[j]) / len(correctness_list[j])
+            # Direct pass rate (0~1)
+            base_rewards = []
+            for x in data[i]["correctness"]:
+                pass_rate = sum(x) / len(x) if len(x) > 0 else 0.0
+                base_rewards.append(pass_rate)
+                num_correct_task += all(x)
+                num_task += 1
+
+        # Prompt-level TPF normalization
+        if tpf_norm_mode == "none":
+            # No normalization: use raw TPF * tpf_coefficient
+            speed_reward_list = [tpf_coefficient * tpf for tpf in local_tpf_list]
+        elif tpf_norm_mode == "z_score":
+            # Z-score normalization
+            mean_tpf = sum(local_tpf_list) / len(local_tpf_list)
+            std_tpf = (sum((x - mean_tpf) ** 2 for x in local_tpf_list) / len(local_tpf_list)) ** 0.5
+            if std_tpf > 0:
+                speed_reward_list = [tpf_coefficient * (tpf - mean_tpf) / std_tpf for tpf in local_tpf_list]
             else:
-                pass_rate = 0
-            
-            if pass_rate > 0:  # Has passed some tests
-                reward = pass_rate * normalized_tpf[j]  # Multiplication: [0, 1]
-            else:  # Complete failure
-                reward = -1.0 + normalized_tpf[j] * 0.5  # Addition: [-1, -0.5]
-            
-            rewards.append(reward)
-        
-        data[i]["rewards"] = rewards
-        
+                speed_reward_list = [0.0] * len(local_tpf_list)
+        elif tpf_norm_mode == "minmax":
+            # Min-max normalization to [0, 1]
+            tpf_min = min(local_tpf_list)
+            tpf_max = max(local_tpf_list)
+            tpf_range = tpf_max - tpf_min
+            if tpf_range > 0:
+                speed_reward_list = [(tpf - tpf_min) / tpf_range for tpf in local_tpf_list]
+            else:
+                speed_reward_list = [0.5] * len(local_tpf_list)
+        else:
+            raise ValueError(f"Invalid tpf_norm_mode: {tpf_norm_mode}. Must be 'none', 'z_score', or 'minmax'")
+
+        # Calculate new reward: base_reward + speed_reward
+        rewards = []
+        for j in range(len(base_rewards)):
+            rewards.append(base_rewards[j] + speed_reward_list[j])
+        data[i]["ground_truth_answer"] = rewards
+
         if config.experiment.function == "train":
-            # Filter out prompts where TPF variance is too small (no learning signal)
-            # Same as math tasks: threshold = 0.1
-            tpf_variance = max_tpf - min_tpf if len(tpf_list) > 0 else 0
-            if tpf_variance < 0.1:
+            # Filter 1: All-wrong filter (configurable)
+            if filter_all_wrong:
+                all_wrong = all(sum(x) == 0 for x in data[i]["correctness"])
+                if all_wrong:
+                    continue
+
+            # Filter 2: TPF range filter (using original TPF)
+            if max(local_tpf_list) - min(local_tpf_list) < filter_tpf_threshold:
+                continue
+
+            # Filter 3: All-wrong check (check correctness not reward)
+            if all(sum(x) == 0 for x in data[i]["correctness"]):
                 continue
 
             for j in range(len(rewards)):
@@ -143,10 +175,39 @@ if __name__ == "__main__":
                 data_i["reward"] = rewards[j]
                 data_i["response"] = data[i]["full_output"][j]
                 data_i["step_map"] = data[i]["step_map"][j]
+                # Add truncated field (default to False if not present for backward compatibility)
+                data_i["truncated"] = data[i].get("truncated", [False] * len(rewards))[j]
+                # Pass through sample_idx and resp_idx for correct advantage grouping
+                data_i["sample_idx"] = data[i].get("sample_idx", [i] * len(rewards))[j]
+                data_i["resp_idx"] = data[i].get("resp_idx", list(range(len(rewards))))[j]
                 final_data.append(data_i)
-        
+
         if config.experiment.function == "evaluation":
             data[i]["step_map"] = []
+
+
+    # Calculate Efficient Prompt Ratio (proportion of prompts where tpf max-min < 0.01)
+    efficient_prompt_count = 0
+    total_prompt_count = 0
+
+    for i in range(len(data)):
+        if "num_forwards" in data[i] and len(data[i]["num_forwards"]) > 0:
+            local_tpf_list = []
+            lengths = data[i]["response_length"]
+            for j in range(len(lengths)):
+                if data[i]["num_forwards"][j] > 0:
+                    tpf = lengths[j] / data[i]["num_forwards"][j]
+                else:
+                    tpf = 0.0
+                local_tpf_list.append(tpf)
+
+            if len(local_tpf_list) > 0:
+                tpf_range = max(local_tpf_list) - min(local_tpf_list)
+                if tpf_range < 0.01:
+                    efficient_prompt_count += 1
+                total_prompt_count += 1
+
+    efficient_prompt_ratio = efficient_prompt_count / total_prompt_count if total_prompt_count > 0 else 0.0
 
 
     if config.experiment.function == "train":
@@ -172,16 +233,20 @@ if __name__ == "__main__":
         acc = num_correct_task / num_task if num_task else 0
         avg_len = sum(response_length_list)/len(response_length_list)
 
-        output_text = f"train step: {config.experiment.current_epoch}  "
-        
-        if config.experiment.function == "train":
-            if config.model.model_base != "sdar" and config.model.model_base != "trado":
-                output_text = output_text + f"remasking_strategy: {config.rollout.remasking_strategy}  block_size: {config.rollout.block_size}  acc: {acc}  avg length: {avg_len}"
-            else:
-                output_text = output_text + f"remasking_strategy: {config.rollout.remasking_strategy}  top_k: {config.rollout.top_k}  acc: {acc}  avg length: {avg_len}"
+        # Calculate TPF statistics (only for non-zero TPF values)
+        valid_tpf = [t for t in tpf_list if t > 0]
+        if valid_tpf:
+            avg_tpf = sum(valid_tpf) / len(valid_tpf)
+            min_tpf = min(valid_tpf)
+            max_tpf = max(valid_tpf)
+            tpf_stats = f"avg_tpf: {avg_tpf:.2f}  min_tpf: {min_tpf:.2f}  max_tpf: {max_tpf:.2f}"
         else:
-            if config.model.model_base != "sdar" and config.model.model_base != "trado":
-                output_text = output_text + f"remasking_strategy: {config.evaluation.remasking_strategy}  block_size: {config.evaluation.block_size}  acc: {acc}  avg length: {avg_len}"
-            else:
-                output_text = output_text + f"remasking_strategy: {config.evaluation.remasking_strategy}  top_k: {config.evaluation.top_k}  acc: {acc}  avg length: {avg_len}"
+            tpf_stats = "avg_tpf: N/A"
+
+        output_text = f"train step: {config.experiment.current_epoch}  "
+
+        if config.experiment.function == "train":
+            output_text = output_text + f"remasking_strategy: {config.rollout.remasking_strategy}  top_k: {config.rollout.top_k}  acc: {acc}  avg length: {avg_len}  {tpf_stats}  efficient_prompt_ratio: {efficient_prompt_ratio:.4f}"
+        else:
+            output_text = output_text + f"remasking_strategy: {config.evaluation.remasking_strategy}  top_k: {config.evaluation.top_k}  acc: {acc}  avg length: {avg_len}  {tpf_stats}"
         save_and_print(output_text)

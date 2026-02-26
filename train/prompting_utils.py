@@ -19,7 +19,7 @@ class UniversalPrompting():
         prompts_list, responses_list = text_ids_pairs
         pad_id = self.text_tokenizer.pad_token_id
 
-        # 计算 response 的真实长度（去除 padding）
+        # Compute true response length (excluding padding)
         response_lengths = (responses_list != pad_id).sum(dim=1)
         max_resp_len = min(response_lengths.max().item(), self.max_gen_length)
         
@@ -33,16 +33,16 @@ class UniversalPrompting():
             prompt_ids = prompt_ids.tolist()
             resp_ids = resp_ids.tolist()
 
-            # 剥离 response 中的 padding tokens
+            # Strip padding tokens from response
             real_resp_len = response_lengths[idx].item()
             resp_ids = resp_ids[:real_resp_len]
 
-            # 拼接 prompt + response (无中间 padding)
+            # Concatenate prompt + response (no intermediate padding)
             temp_ids = prompt_ids + resp_ids
             temp_masks = [1] * len(temp_ids)
             temp_labels = temp_ids.copy()
 
-            # padding 或截断到 max_seq_len
+            # Pad or truncate to max_seq_len
             if len(temp_ids) < max_seq_len:
                 pad_len = max_seq_len - len(temp_ids)
                 temp_ids.extend([pad_id] * pad_len)
@@ -61,7 +61,7 @@ class UniversalPrompting():
         attention_masks = torch.cat(attention_masks, dim=0)
         label_ids = torch.cat(label_ids, dim=0)
 
-        return input_ids, label_ids, prompts_list.shape[1]
+        return input_ids, label_ids, int(prompts_list.shape[1])
 
         
     
@@ -79,14 +79,14 @@ class UniversalPrompting():
             return_length=True
         )
         lengths = enc["length"]
-        # 2) 过滤出长度 <= max_len 的 indices
+        # 2) Filter to indices whose length <= max_len
         keep_indices = [i for i, L in enumerate(lengths) if L <= self.max_prompt_len]
         drop_num = len(prompts) - len(keep_indices)
         
         prompts  = [prompts[i]  for i in keep_indices]
         responses = [responses[i] for i in keep_indices]
 
-        # 使用 tokenizer 将 raw text 转为 token ids
+        # Tokenize raw text to token ids
         prompt_ids = self.text_tokenizer(
             prompts,
             padding=True,
@@ -100,7 +100,7 @@ class UniversalPrompting():
             padding_side = "right"
         )['input_ids']
         input_ids_lm, labels_lm, start_pos = self.lm_prompt((prompt_ids, response_ids))
-        return input_ids_lm, labels_lm, start_pos, drop_num
+        return input_ids_lm, labels_lm, int(start_pos), drop_num, keep_indices
 
 
 if __name__ == '__main__':

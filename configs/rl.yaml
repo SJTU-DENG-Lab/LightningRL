@@ -1,0 +1,160 @@
+wandb:
+  entity: null
+  resume: 'auto'
+
+
+
+experiment:
+    project: "lightningrl"  # need to be same of this file name
+    function: "train" # no need to change
+    start_from_scratch: True # set to True by default, if you stopped the training, and want to keep training with your ckpt model.optimized_name, set to False, and set current_epoch to the last step you stopped
+    total_step: 80
+    save_every: 10
+    eval_every: 1
+    train_value_every: 1
+    current_epoch: 1
+    deepspeed_file: "1_node_8_gpus_deepspeed_zero3.yaml"
+    num_node: 1
+    node_index: 0
+    gpu_ids: "0,1,2,3,4,5,6,7"  # specify which GPUs to use, e.g., "0,1,2,3" or "4,5,6,7"
+
+model:
+    pretrained_model: "absolute path of your model" # absolute path of your model
+    value_base_model: "absolute path of your model" # absolute path of your model
+    optimized_name: "optimized" # the output name for your optimized policy model, will be saved under {project}/ckpt
+    optimized_value_name: "optimized_value" # the output name for your optimized value model, will be saved under {project}/ckpt
+    model_base: "sdar"
+    # ===== FusedLoss Optimization =====
+    use_fused_diffusion_loss: true  # Enable FusedLinearDiffusionCrossEntropyLoss for better memory/speed
+    fused_loss_num_chunks: 1  # Number of chunks (higher = less memory, default: 8)
+
+
+dataset:
+    train_dataset: "GSM8K_train" # "MATH_train""PrimeIntellect"
+    optimization_data: "rl_data" # name of the rollout data output
+    data_type: "math" # "math" "code" 
+
+# also see explanations in eval configs
+rollout:
+    tensor_parallel_size: 1 # set to 1 by default, if oom, try reduce max_active first, if still oom, set tensor_parallel_size to 8
+    cache_max_entry_count: 0.7
+    max_active: 512
+    num_task_per_step: 128
+    num_response_per_task: 32
+    temperature: 1.0
+    max_token: 8192
+    block_size: 32
+    denoising_steps_per_block: 32
+    top_p: 1.0
+    top_k: 0
+    remasking_strategy: "low_confidence_dynamic" #"low_confidence_static""low_confidence_dynamic"
+    dynamic_threshold: 0.9 # no use for "low_confidence_static"
+    start_with_think: False
+    # === Sequential Sampling Settings ===
+    sequential_sampling: True     # True: sequential traversal with cursor, False: random sampling
+    data_filter_resample_enabled: false  # True: automatically resample filtered prompts (2x filtered count)
+    sampling_multiplier: 1       # sample N times more data to compensate for data filtering
+    do_sample: true              # true=采样(训练时探索), false=贪婪解码
+
+execute:
+    num_chunk: 32 # batch size of executing codes in coding eval tasks
+
+training:
+    # ===== Value Model Control =====
+    use_value_model: False              # 控制是否使用value model
+                                       # true: 使用value model + GAE计算advantage
+                                       # false: 不使用value model，直接用rewards作为advantage 
+    # ===== Value Pretrain Settings =====
+    value_pretrain_enabled: false                   # Whether to enable auto-stop pretraining based on convergence
+    value_pretrain_lam: 1.0                        # GAE lambda for value pretraining (default: 0.95)
+    value_pretrain_ev_threshold: 0.3                # explained_variance threshold for convergence (✓ if > 0.5)
+    value_pretrain_bias_threshold: 0.1              # bias threshold for convergence (✓ if |bias| < 0.1)
+    value_pretrain_corr_threshold: 0.5              # correlation threshold for convergence (✓ if > 0.7)
+    value_pretrain_steps: 10                         # Legacy: pretrain until N global steps (0 to disable)
+    # ===== Training Settings =====
+    gradient_checkpointing_enable: True
+    gradient_accumulation_steps: 8
+    batch_size_value: 16              # Value Model training batch size
+    batch_size_policy: 8              # Policy Model training batch size
+    batch_size_value_inference: 32    # Value Model inference batch size (@torch.no_grad, can be larger)
+    batch_size_policy_inference: 16   # Policy Model inference batch size (@torch.no_grad, can be larger)
+    batch_size_ref_logp: 16            # Reference model logp computation batch size (@torch.no_grad, can be larger)
+    use_torch_compile_ref: False       # Use torch.compile for reference model logp computation (faster inference)
+    mixed_precision: "fp16"
+    enable_tf32: True
+    seed: 10086
+    # Flex Attention is automatically enabled when PyTorch 2.5+ is available
+    num_train_epochs: 1
+    max_grad_norm: 1.0
+    block_size: 4     # training attention mask block size (与 rollout.block_size 不同，这里控制训练时 block diffusion 的注意力分块大小)
+    shrink: 1
+    post_num: 0
+    max_gen_length: 8192
+    max_prompt_len: 1024
+    eps: 0.20           # clip eps for disadvantage actions (adv < 0)
+    eps_high: 0.2      # clip eps for advantage actions (adv > 0)
+    gam: 1.0
+    lam: 1.0
+    kl_estimator: "k3"  # "k1", "k2", or "k3" - KL divergence estimator
+    nll_loss_weight: 0.1       # NLL loss weight for correct samples, 0 to disable
+    kl_beta: 0.01              # KL loss coefficient (computed inside model using reference policy)
+    # 三个独立的 reduction 模式
+    policy_reduction_mode: "sequence"      # or "token"
+    kl_reduction_mode: "token"            # or "token"
+    nll_reduction_mode: "token"             # or "sequence"
+
+
+reward:
+    tpf_coefficient: 1          # TPF 系数（仅在 tpf_norm_mode="none" 时生效）
+    filter_tpf_threshold: 0.01       # TPF 范围过滤阈值：过滤 tpf 极差 < 0.01 的 prompt
+    filter_all_wrong: true           # 是否过滤全错样本
+    # TPF归一化模式（废弃旧的tpf_norm布尔值，向后兼容：true="z_score", false="none"）
+    # - "none": 使用原始TPF * tpf_coefficient
+    # - "z_score": Z-score归一化 (tpf - mean) / std
+    # - "minmax": Min-max归一化到[0,1] (tpf - min) / (max - min)
+    tpf_norm_mode: "minmax"       # TPF归一化模式，默认为minmax
+    acc_norm: false              # ACC归一化：数学=false=固定值(+1/-1), true=Z-score; 代码=false=pass rate(0~1), true=Z-score
+    # Advantage归一化模式
+    # - "batch": 整个batch级别z-score归一化 (reward - batch_mean) / batch_std
+    # - "prompt_group": prompt组内z-score归一化 (reward - group_mean) / group_std
+    # - "prompt_group_center": prompt组内中心化 (reward - group_mean)，不除以std
+    adv_norm_mode: "prompt_group_center"
+
+optimizer:
+    name: adamw
+    params: # default adamw params
+        policy_learning_rate: 1e-6
+        value_learning_rate: 2e-6
+        scale_lr: False # scale learning rate by total batch size
+        beta1: 0.9
+        beta2: 0.999
+        weight_decay: 0.0
+        epsilon: 1e-8
+
+
+lr_scheduler:
+    scheduler: "constant_with_warmup"
+    params:
+        learning_rate: ${optimizer.params.policy_learning_rate}
+        warmup_steps: 10
+        min_lr_scale: 1.0
+
+
+evaluation:
+    eval_dataset: "GSM8K"  # "MATH500" "LiveCodeBench"
+    data_type: "math" # "math" "code"
+    tensor_parallel_size: 1
+    max_active: 512
+    num_response_per_task: 16
+    temperature: 1.0
+    max_token: 8192
+    block_size: 32
+    denoising_steps_per_block: 32
+    top_p: 1.0
+    top_k: [0]
+    remasking_strategy: ["low_confidence_dynamic"] #"low_confidence_static""low_confidence_dynamic"
+    dynamic_threshold: 0.9 # no use for "low_confidence_static"
+    start_with_think: False
+    do_sample: false             # true=采样, false=贪婪解码(评估时使用最佳策略)
+
+

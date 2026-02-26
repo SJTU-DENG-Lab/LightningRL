@@ -13,8 +13,8 @@ distributed_type: DEEPSPEED
 downcast_bf16: 'no'
 main_training_function: main
 mixed_precision: fp16
-num_machines: 16
-num_processes: 128
+num_machines: 1
+num_processes: 8
 rdzv_backend: static
 same_network: true
 tpu_env: []

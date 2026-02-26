@@ -1,28 +1,14 @@
-import argparse
-from huggingface_hub import hf_hub_download
-import shutil
+from huggingface_hub import snapshot_download
 
+dataset_id = "dataset"
+local_dir = "./PrimeIntellect"
 
-parser = argparse.ArgumentParser(description="Download a dataset from HF hub")
-parser.add_argument(
-    "--dataset",
-    choices=["PrimeIntellect","MATH_train","demon_openr1math","MATH500","GSM8K","AIME2024","LiveBench","LiveCodeBench","MBPP","HumanEval"],
-    required=True,
-    help="Which dataset to download"
+snapshot_download(
+    repo_id=dataset_id,
+    repo_type="dataset",          
+    local_dir=local_dir,
+    local_dir_use_symlinks=False, # 下载实际文件
+    resume_download=True          # 支持断点续传
 )
-args = parser.parse_args()
-dataset = args.dataset
 
-
-if dataset == "MATH_train" or dataset == "PrimeIntellect" or dataset == "demon_openr1math":
-    split = "train"
-else:
-    split = "test"
-
-
-cached_path = hf_hub_download(
-    repo_id=f"Gen-Verse/{dataset}",
-    repo_type="dataset",
-    filename=f"{split}/{dataset}.json"
-)
-shutil.copy(cached_path, f"./{dataset}.json")
+print(f"数据集已下载至: {local_dir}")

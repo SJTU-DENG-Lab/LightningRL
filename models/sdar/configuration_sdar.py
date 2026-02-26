@@ -113,6 +113,10 @@ class SDARConfig(PretrainedConfig):
             The number of layers that use SWA (Sliding Window Attention). The bottom layers use SWA while the top use full attention.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
+        use_fused_diffusion_loss (`bool`, *optional*, defaults to `False`):
+            Whether to use FusedLinearDiffusionCrossEntropyLoss for better memory efficiency and speed.
+        fused_loss_num_chunks (`int`, *optional*, defaults to `8`):
+            Number of chunks for FusedLinearDiffusionCrossEntropyLoss. Higher values use less memory.
     ```python
     >>> from transformers import SDARModel, SDARConfig
     >>> # Initializing a SDAR style configuration
@@ -164,6 +168,8 @@ class SDARConfig(PretrainedConfig):
         sliding_window=4096,
         max_window_layers=28,
         attention_dropout=0.0,
+        use_fused_diffusion_loss=False,
+        fused_loss_num_chunks=8,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -190,6 +196,8 @@ class SDARConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+        self.use_fused_diffusion_loss = use_fused_diffusion_loss
+        self.fused_loss_num_chunks = fused_loss_num_chunks
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:

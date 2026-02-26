@@ -19,8 +19,8 @@ if __name__ == "__main__":
     config = get_config()
 
     project_name = config.experiment.project
-    
-    if config.experiment.current_epoch == 1:
+
+    if config.experiment.current_epoch <= 1:
         pretrained_model = config.model.pretrained_model
     else:
         pretrained_model = "../" + project_name + "/ckpt/" + config.model.optimized_name

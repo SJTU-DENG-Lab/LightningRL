@@ -27,38 +27,13 @@ if __name__ == "__main__":
         
     def sample(model_base):
         cprint(f"This is sampling.", color = "green")
-        if model_base == "dream":
-            subprocess.run(
-                f'python dream_sample.py '
-                f'config=../configs/{project_name}.yaml ',
-                shell=True,
-                cwd='sample',
-                check=True,
-            )
-        elif model_base == "llada":
-            subprocess.run(
-                f'python llada_sample.py '
-                f'config=../configs/{project_name}.yaml ',
-                shell=True,
-                cwd='sample',
-                check=True,
-            )
-        elif model_base == "sdar":
-            subprocess.run(
-                f'python sdar_sample.py '
-                f'config=../configs/{project_name}.yaml ',
-                shell=True,
-                cwd='sample',
-                check=True,
-            )
-        elif model_base == "trado":
-            subprocess.run(
-                f'python trado_sample.py '
-                f'config=../configs/{project_name}.yaml ',
-                shell=True,
-                cwd='sample',
-                check=True,
-            )
+        subprocess.run(
+            f'python sample.py '
+            f'config=../configs/{project_name}.yaml ',
+            shell=True,
+            cwd='sample',
+            check=True,
+        )
     
     def reward():
         cprint(f"This is the rewarding.", color = "green")

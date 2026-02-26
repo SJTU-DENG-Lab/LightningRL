@@ -179,9 +179,6 @@ def _is_latex_equal(str1, str2):
 
 
 async def is_latex_equal(str1, str2, executor, math_mode="legacy"):
-    # Timeout setting: 3 seconds (matching math_verify's default)
-    EVAL_TIMEOUT = 3.0
-    
     if math_mode == "legacy":
         if (len(str1) > 128 and repeatness(str1)) or (len(str2) > 128 and repeatness(str2)):
             return False
@@ -189,7 +186,7 @@ async def is_latex_equal(str1, str2, executor, math_mode="legacy"):
         try:
             loop = asyncio.get_event_loop()
             task = loop.run_in_executor(executor, _is_latex_equal, str1, str2)
-            result = await asyncio.wait_for(task, timeout=EVAL_TIMEOUT)
+            result = await asyncio.wait_for(task, timeout=1.0)
             return result
         except asyncio.exceptions.TimeoutError:
             return False
@@ -197,7 +194,7 @@ async def is_latex_equal(str1, str2, executor, math_mode="legacy"):
         try:
             loop = asyncio.get_event_loop()
             task = loop.run_in_executor(executor, verify, parse(str1), parse(str2))
-            result = await asyncio.wait_for(task, timeout=EVAL_TIMEOUT)
+            result = await asyncio.wait_for(task, timeout=1.0)
             return result
         except asyncio.exceptions.TimeoutError:
             return False
@@ -280,25 +277,20 @@ def _fix_sqrt(string):
 def _strip_string(string):
     # linebreaks
     string = string.replace("\n", "")
-    # print(string)
 
     # remove inverse spaces
     string = string.replace("\\!", "")
-    # print(string)
 
     # replace \\ with \
     string = string.replace("\\\\", "\\")
-    # print(string)
 
     # replace tfrac and dfrac with frac
     string = string.replace("tfrac", "frac")
     string = string.replace("dfrac", "frac")
-    # print(string)
 
     # remove \left and \right
     string = string.replace("\\left", "")
     string = string.replace("\\right", "")
-    # print(string)
 
     # Remove circ (degrees)
     string = string.replace("^{\\circ}", "")

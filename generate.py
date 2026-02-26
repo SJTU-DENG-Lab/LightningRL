@@ -1,4 +1,4 @@
-# adpated from SADR https://github.com/JetAstra/SDAR/blob/main/generate.py
+# adapted from SDAR https://github.com/JetAstra/SDAR/blob/main/generate.py
 
 import argparse
 import torch

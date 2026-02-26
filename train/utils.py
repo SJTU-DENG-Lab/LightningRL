@@ -78,13 +78,13 @@ def mask_or_random_replace_tokens(image_tokens, mask_id, config, mask_schedule, 
     batch_size, seq_len = image_tokens.shape
 
     if not is_train and seed is not None:
-        # 保存当前随机状态
+        # Save current random state
         rng_state = torch.get_rng_state()
         if torch.cuda.is_available():
             cuda_rng_state = torch.cuda.get_rng_state()
         python_rng_state = random.getstate()
         
-        # 设置固定种子
+        # Set fixed seed
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
@@ -166,7 +166,7 @@ def mask_or_random_replace_tokens(image_tokens, mask_id, config, mask_schedule, 
         loss_weight = None
 
     if not is_train and seed is not None:
-        # 恢复随机状态
+        # Restore random state
         torch.set_rng_state(rng_state)
         if torch.cuda.is_available():
             torch.cuda.set_rng_state(cuda_rng_state)

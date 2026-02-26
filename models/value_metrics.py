@@ -177,20 +177,26 @@ def compute_sequence_level_metrics(
 
 
 def format_value_metrics(
-    metrics: Dict[str, float], 
-    epoch: int = 0, 
+    metrics: Dict[str, float],
+    epoch: int = 0,
     prefix: str = "",
-    output_file: Optional[str] = None
+    output_file: Optional[str] = None,
+    ev_threshold: float = 0.5,
+    bias_threshold: float = 0.1,
+    corr_threshold: float = 0.7
 ) -> str:
     """
     Format metrics into a readable string for logging.
-    
+
     Args:
         metrics: dict of metric name -> value
         epoch: current epoch number
         prefix: optional prefix for the output
         output_file: optional file path to append metrics to
-    
+        ev_threshold: explained_variance threshold for "good" status
+        bias_threshold: bias threshold (absolute) for "good" status
+        corr_threshold: correlation threshold for "good" status
+
     Returns:
         Formatted string for logging
     """
@@ -204,20 +210,20 @@ def format_value_metrics(
     # Core metrics
     if "explained_variance" in metrics:
         ev = metrics["explained_variance"]
-        ev_status = "✓" if ev > 0.5 else ("△" if ev > 0 else "✗")
+        ev_status = "✓" if ev > ev_threshold else ("△" if ev > 0 else "✗")
         lines.append(f"  explained_variance: {ev:.4f} {ev_status}")
-    
+
     if "bias" in metrics:
         bias = metrics["bias"]
-        bias_status = "✓" if abs(bias) < 0.1 else "△"
+        bias_status = "✓" if abs(bias) < bias_threshold else "△"
         lines.append(f"  bias: {bias:.4f} {bias_status}")
-    
+
     if "mse" in metrics:
         lines.append(f"  mse: {metrics['mse']:.4f}")
-    
+
     if "correlation" in metrics:
         corr = metrics["correlation"]
-        corr_status = "✓" if corr > 0.7 else ("△" if corr > 0.3 else "✗")
+        corr_status = "✓" if corr > corr_threshold else ("△" if corr > 0.3 else "✗")
         lines.append(f"  correlation: {corr:.4f} {corr_status}")
     
     # Return/Value statistics
@@ -302,6 +308,47 @@ def collect_value_metrics_from_dataset(dataset, accelerator=None) -> Dict[str, f
             metrics.update(seq_metrics)
         except Exception:
             pass  # Skip if computation fails
-    
+
     return metrics
 
+
+def check_pretrain_convergence(
+    metrics: Dict[str, float],
+    ev_threshold: float,
+    bias_threshold: float,
+    corr_threshold: float
+) -> Tuple[bool, Dict[str, bool], str]:
+    """
+    Check whether pretraining has converged
+
+    Args:
+        metrics: dict of metric name -> value
+        ev_threshold: explained_variance threshold
+        bias_threshold: bias threshold (absolute)
+        corr_threshold: correlation threshold
+
+    Returns:
+        (converged, per-metric status dict, status string)
+    """
+    ev = metrics.get("explained_variance", 0)
+    bias = metrics.get("bias", 999)
+    corr = metrics.get("correlation", 0)
+
+    ev_ok = ev > ev_threshold
+    bias_ok = abs(bias) < bias_threshold
+    corr_ok = corr > corr_threshold
+
+    status = {
+        "explained_variance": ev_ok,
+        "bias": bias_ok,
+        "correlation": corr_ok
+    }
+
+    status_str = (
+        f"EV: {ev:.4f}({'✓' if ev_ok else '✗'}) | "
+        f"Bias: {bias:.4f}({'✓' if bias_ok else '✗'}) | "
+        f"Corr: {corr:.4f}({'✓' if corr_ok else '✗'})"
+    )
+
+    converged = ev_ok and bias_ok and corr_ok
+    return converged, status, status_str
