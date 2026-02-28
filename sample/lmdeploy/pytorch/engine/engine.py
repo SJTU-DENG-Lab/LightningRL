@@ -864,7 +864,7 @@ class Engine(EngineBase):
             if num_logprobs >= 0:
                 cur_logprobs = (logprobs.vals[idx, :num_logprobs + 1], logprobs.indices[idx, :num_logprobs + 1])
 
-            # step_map: 获取每个 token 被解码的步数
+            # step_map: get the decoding step number for each token
             step_map = None
             if hasattr(msg, 'generated_step_map'):
                 step_map = msg.generated_step_map.tolist()

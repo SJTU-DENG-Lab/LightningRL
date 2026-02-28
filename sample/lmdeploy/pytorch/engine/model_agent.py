@@ -1037,7 +1037,7 @@ class BaseModelAgent:
         self.cache_engine = None
         self.reset_graph_runner()
         device = 'cpu' if level == 1 else 'meta'
-        # print(f"sleep {level} 被执行了")
+        # print(f"sleep {level} was executed")
         self.patched_model.get_model().to(device=device)
         torch.cuda.empty_cache()
 

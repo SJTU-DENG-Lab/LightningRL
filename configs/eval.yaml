@@ -15,7 +15,7 @@ model_base: "sdar"
 dataset:
     eval_dataset: "GSM8K" #"MBPP""MATH500""GSM8K""AIME2024""GPQA""LiveCodeBench""HumanEval""LiveBench"
     data_type: "math" #"code""math"
-    n_shot: 0  # 0=原始0-shot(默认), 4=使用4-shot(仅MATH500生效)
+    n_shot: 0  # 0=original 0-shot (default), 4=use 4-shot (only effective for MATH500)
 
 execute:
     num_chunk: 128
@@ -35,5 +35,5 @@ rollout:
     dynamic_threshold: 0.90
     start_with_think: False # if not reasoning model, set to False, otherwise True
     output_unmasking_history: True
-    do_sample: false  # 评估时使用贪婪解码
+    do_sample: false  # Use greedy decoding during evaluation
 

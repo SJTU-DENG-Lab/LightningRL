@@ -34,16 +34,16 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
 
     # For dllm
     history_dllm_mask: HistoryDLLMMask = field(default_factory=HistoryDLLMMask)
-    history_step_map: HistoryTokenIds = field(default_factory=HistoryTokenIds)  # 添加 step_map 追踪
+    history_step_map: HistoryTokenIds = field(default_factory=HistoryTokenIds)  # Add step_map tracking
 
     def __post_init__(self):
         """Post init."""
         super().__post_init__()
         self._num_valid_ids: int = len(self.history_cache)
         self._strategy: DLLMSequenceStrategy = self._seq_meta.strategy
-        self._current_step: int = 0  # 当前解码步数
-        self._stop_pos: int = None  # EOS 位置标记
-        self._should_stop_after_block: bool = False  # 标记是否在当前 block 完成后停止
+        self._current_step: int = 0  # Current decoding step count
+        self._stop_pos: int = None  # EOS position marker
+        self._should_stop_after_block: bool = False  # Flag whether to stop after current block completes
 
     @property
     def dllm_mask(self):
@@ -89,10 +89,10 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
         """Mark stop position but don't truncate current block.
         The block will finish generation completely, and stop at next block."""
         dllm_block_length = self.dllm_block_length
-        # 只做标记，不截断当前 block
+        # Only mark, do not truncate current block
         self._stop_pos = pos
         self._should_stop_after_block = True
-        # 注释掉原来的截断逻辑
+        # Commented out original truncation logic
         # val = dllm_block_length - pos - 1
         # self._num_valid_ids -= val
         # self.num_new_tokens -= val
@@ -104,7 +104,7 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
         dllm_mask_token = self.dllm_mask_token
         new_token_ids = [token_ids]
         new_dllm_mask = [dllm_mask]
-        # 输入阶段标记为步骤 0（prefill）
+        # Mark input phase as step 0 (prefill)
         new_step_map = [np.zeros(len(token_ids), dtype=np.int32)]
 
         # add uncached tokens in token_ids
@@ -145,7 +145,7 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
         self._num_valid_ids = self.num_history_ids + num_tokens
         self._num_token_ids = len(token_ids)
         self.num_new_tokens = 0
-        self._current_step = 0  # 重置步数计数器
+        self._current_step = 0  # Reset step counter
 
     def _update_token_ids_decode(self, token_ids: np.ndarray, dllm_mask: np.ndarray):
         """Update token ids for decode."""
@@ -155,18 +155,18 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
         assert num_tokens % dllm_block_length == 0
         num_history_ids = self.num_history_ids
 
-        # 获取旧的 mask 和 step_map 来判断哪些 token 是新解码的
+        # Get old mask and step_map to determine which tokens are newly decoded
         old_mask = self.history_dllm_mask._token_ids[num_history_ids:num_history_ids + num_tokens].copy()
         old_step_map = self.history_step_map._token_ids[num_history_ids:num_history_ids + num_tokens].copy()
-        
-        # 检查是否有新的 tokens 被 unmask
+
+        # Check if any new tokens are unmasked
         newly_unmasked = (old_mask == DLLM_MASKED) & (dllm_mask == DLLM_UNMASKED)
-        
-        # 只有当有新 tokens 被 unmask 时才递增步数
+
+        # Increment step only when new tokens are unmasked
         if newly_unmasked.any():
             self._current_step += 1
-        
-        # 更新 step_map：对于从 MASKED 变成 UNMASKED 的 token，设置为当前步数
+
+        # Update step_map: set current step for tokens that changed from MASKED to UNMASKED
         new_step_map = old_step_map.copy()
         new_step_map[newly_unmasked] = self._current_step
 
@@ -186,9 +186,9 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
             self.num_new_tokens += num_new
 
         if is_cached:
-            # 如果标记了应该停止，则不添加新 block
+            # If marked to stop, do not add a new block
             if self._should_stop_after_block:
-                # 当前 block 已完成，不再添加新 block，让 scheduler 知道应该停止了
+                # Current block is complete, stop adding new blocks, let scheduler know to stop
                 return
             
             # add new block
@@ -210,12 +210,12 @@ class SchedulerSequenceDLLM(SchedulerSequenceDefault):
         if self.num_token_ids > dllm_block_length:
             end = self.num_token_ids - dllm_block_length
             self.history_dllm_mask[num_history_ids:num_history_ids + end] = DLLM_CACHED
-            # prefill 阶段缓存的部分标记为 0（这些是输入，不在 generated_ids 中）
+            # Mark the cached portion during prefill phase as 0 (these are inputs, not in generated_ids)
             self.history_step_map[num_history_ids:num_history_ids + end] = 0
             self._num_history_ids += end
             self._num_token_ids -= end
         
-        # prefill 后开始 decode，保持 _current_step = 0，第一次 unmask 会变成 1
+        # After prefill, start decode, keep _current_step = 0, first unmask will set it to 1
 
         # decoding update
         self._update_token_ids_decode(token_ids, dllm_mask)

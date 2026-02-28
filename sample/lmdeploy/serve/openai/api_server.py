@@ -360,21 +360,21 @@ async def chat_completions_v1(request: ChatCompletionRequest, raw_request: Reque
         migration_request = MigrationRequest.model_validate(migration_request)
     print(request.session_id)
     if request.session_id == -1:
-        # 根据prompt数量预留足够的连续可用session_id
+        # Reserve enough consecutive available session_ids based on the number of prompts
         num_prompts = len(request.prompt) if isinstance(request.prompt, list) else 1
         async with VariableInterface.session_id_lock:
-            # 循环查找连续可用的session_id
+            # Loop to find consecutive available session_ids
             while True:
                 VariableInterface.session_id += 1
                 start_id = VariableInterface.session_id
-                # 检查从start_id开始的num_prompts个id是否都可用
+                # Check whether num_prompts ids starting from start_id are all available
                 all_available = True
                 for i in range(num_prompts):
                     sid = start_id + i
-                    if (VariableInterface.async_engine.id2step.get(sid, 0) != 0 or 
+                    if (VariableInterface.async_engine.id2step.get(sid, 0) != 0 or
                         sid in VariableInterface.async_engine.id2inst):
                         all_available = False
-                        VariableInterface.session_id = sid  # 跳到冲突的位置
+                        VariableInterface.session_id = sid  # Jump to the conflicting position
                         break
                 if all_available:
                     request.session_id = start_id
@@ -729,21 +729,21 @@ async def completions_v1(request: CompletionRequest, raw_request: Request = None
         migration_request = MigrationRequest.model_validate(migration_request)
 
     if request.session_id == -1:
-        # 根据prompt数量预留足够的连续可用session_id
+        # Reserve enough consecutive available session_ids based on the number of prompts
         num_prompts = len(request.prompt) if isinstance(request.prompt, list) else 1
         async with VariableInterface.session_id_lock:
-            # 循环查找连续可用的session_id
+            # Loop to find consecutive available session_ids
             while True:
                 VariableInterface.session_id += 1
                 start_id = VariableInterface.session_id
-                # 检查从start_id开始的num_prompts个id是否都可用
+                # Check whether num_prompts ids starting from start_id are all available
                 all_available = True
                 for i in range(num_prompts):
                     sid = start_id + i
-                    if (VariableInterface.async_engine.id2step.get(sid, 0) != 0 or 
+                    if (VariableInterface.async_engine.id2step.get(sid, 0) != 0 or
                         sid in VariableInterface.async_engine.id2inst):
                         all_available = False
-                        VariableInterface.session_id = sid  # 跳到冲突的位置
+                        VariableInterface.session_id = sid  # Jump to the conflicting position
                         break
                 if all_available:
                     request.session_id = start_id
@@ -1212,7 +1212,7 @@ def create_lifespan_handler(backend_config: Union[PytorchEngineConfig, Turbomind
 
     @asynccontextmanager
     async def lifespan_handler(app: FastAPI):
-        # 初始化session_id锁
+        # Initialize session_id lock
         if VariableInterface.session_id_lock is None:
             VariableInterface.session_id_lock = asyncio.Lock()
         

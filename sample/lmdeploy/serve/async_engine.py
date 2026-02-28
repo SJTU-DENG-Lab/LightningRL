@@ -844,7 +844,7 @@ class AsyncEngine(LogitsMixin):
                     token_ids += outputs.token_ids[mask]
                     gen_len = len(token_ids) - input_len
                     
-                    # 提取本次增量的 step_map
+                    # Extract the incremental step_map for this iteration
                     step_map_increment = None
                     if hasattr(outputs, 'step_map') and outputs.step_map is not None:
                         step_map_increment = outputs.step_map[mask]
@@ -894,9 +894,9 @@ class AsyncEngine(LogitsMixin):
                         # avoid returning the last response twice
                         response = ''
                     token_ids, logits, last_hidden_state, logprobs = [], None, None, None
-                    # NOTE: 这段代码原本有bug，条件永远不会满足，所以注释掉
-                    # 如果用户想要EOS token (should_include_stop=True)，它已经在流式输出中包含了
-                    # 如果用户不想要EOS token (should_include_stop=False)，就不应该在这里加
+                    # NOTE: This code originally had a bug where the condition could never be satisfied, so it's commented out
+                    # If user wants EOS token (should_include_stop=True), it's already included in the streaming output
+                    # If user doesn't want EOS token (should_include_stop=False), it should not be added here
                     # should_include_stop = (not gen_config.skip_special_tokens) or gen_config.include_stop_str_in_output
                     # if not should_include_stop and gen_config.include_stop_str_in_output and finish_reason == 'stop':
                     #     # return the eos token id (MUST be in a list), eos string, eos token's logits and so on
@@ -910,7 +910,7 @@ class AsyncEngine(LogitsMixin):
                                 f'"{finish_reason}", input_tokens '
                                 f'{len(input_ids)}, output_tokens {gen_len}')
                     
-                    # 最后的 finish 输出不需要返回 step_map（已经在流式输出中累加了）
+                    # The final finish output does not need to return step_map (already accumulated in streaming output)
                     final_step_map = None
                     
                     yield GenOut(response,

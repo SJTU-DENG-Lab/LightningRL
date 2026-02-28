@@ -54,16 +54,16 @@ rollout:
     sequential_sampling: True     # True: sequential traversal with cursor, False: random sampling
     data_filter_resample_enabled: false  # True: automatically resample filtered prompts (2x filtered count)
     sampling_multiplier: 1       # sample N times more data to compensate for data filtering
-    do_sample: true              # true=采样(训练时探索), false=贪婪解码
+    do_sample: true              # true=sampling (exploration during training), false=greedy decoding
 
 execute:
     num_chunk: 32 # batch size of executing codes in coding eval tasks
 
 training:
     # ===== Value Model Control =====
-    use_value_model: False              # 控制是否使用value model
-                                       # true: 使用value model + GAE计算advantage
-                                       # false: 不使用value model，直接用rewards作为advantage 
+    use_value_model: False              # Controls whether to use value model
+                                       # true: use value model + GAE to compute advantage
+                                       # false: do not use value model, use rewards directly as advantage
     # ===== Value Pretrain Settings =====
     value_pretrain_enabled: false                   # Whether to enable auto-stop pretraining based on convergence
     value_pretrain_lam: 1.0                        # GAE lambda for value pretraining (default: 0.95)
@@ -86,7 +86,7 @@ training:
     # Flex Attention is automatically enabled when PyTorch 2.5+ is available
     num_train_epochs: 1
     max_grad_norm: 1.0
-    block_size: 4     # training attention mask block size (与 rollout.block_size 不同，这里控制训练时 block diffusion 的注意力分块大小)
+    block_size: 4     # training attention mask block size (different from rollout.block_size, controls attention chunk size for block diffusion during training)
     shrink: 1
     post_num: 0
     max_gen_length: 8192
@@ -98,27 +98,27 @@ training:
     kl_estimator: "k3"  # "k1", "k2", or "k3" - KL divergence estimator
     nll_loss_weight: 0.1       # NLL loss weight for correct samples, 0 to disable
     kl_beta: 0.01              # KL loss coefficient (computed inside model using reference policy)
-    # 三个独立的 reduction 模式
+    # Three independent reduction modes
     policy_reduction_mode: "sequence"      # or "token"
     kl_reduction_mode: "token"            # or "token"
     nll_reduction_mode: "token"             # or "sequence"
 
 
 reward:
-    tpf_coefficient: 1          # TPF 系数（仅在 tpf_norm_mode="none" 时生效）
-    filter_tpf_threshold: 0.01       # TPF 范围过滤阈值：过滤 tpf 极差 < 0.01 的 prompt
-    filter_all_wrong: true           # 是否过滤全错样本
-    # TPF归一化模式（废弃旧的tpf_norm布尔值，向后兼容：true="z_score", false="none"）
-    # - "none": 使用原始TPF * tpf_coefficient
-    # - "z_score": Z-score归一化 (tpf - mean) / std
-    # - "minmax": Min-max归一化到[0,1] (tpf - min) / (max - min)
-    tpf_norm_mode: "minmax"       # TPF归一化模式，默认为minmax
-    acc_norm: false              # ACC归一化：数学=false=固定值(+1/-1), true=Z-score; 代码=false=pass rate(0~1), true=Z-score
-    # Advantage归一化模式
-    # - "batch": 整个batch级别z-score归一化 (reward - batch_mean) / batch_std
-    # - "prompt_group": prompt组内z-score归一化 (reward - group_mean) / group_std
-    # - "prompt_group_center": prompt组内中心化 (reward - group_mean)，不除以std
-    adv_norm_mode: "prompt_group_center"
+    tpf_coefficient: 1          # TPF coefficient (only effective when tpf_norm_mode="none")
+    filter_tpf_threshold: 0.01       # TPF range filter threshold: filter prompts with tpf range < 0.01
+    filter_all_wrong: true           # Whether to filter all-wrong samples
+    # TPF normalization mode (replaces old tpf_norm boolean, backwards-compatible: true="z_score", false="none")
+    # - "none": use raw TPF * tpf_coefficient
+    # - "z_score": Z-score normalization (tpf - mean) / std
+    # - "minmax": Min-max normalization to [0,1] (tpf - min) / (max - min)
+    tpf_norm_mode: "z_score"       # TPF normalization mode, default is minmax
+    acc_norm: True              # ACC normalization: math=false=fixed values (+1/-1), true=Z-score; code=false=pass rate (0~1), true=Z-score
+    # Advantage normalization mode
+    # - "batch": batch-level z-score normalization (reward - batch_mean) / batch_std
+    # - "prompt_group": prompt-group-level z-score normalization (reward - group_mean) / group_std
+    # - "prompt_group_center": prompt-group centering (reward - group_mean), without dividing by std
+    adv_norm_mode: "batch"
 
 optimizer:
     name: adamw
@@ -155,6 +155,6 @@ evaluation:
     remasking_strategy: ["low_confidence_dynamic"] #"low_confidence_static""low_confidence_dynamic"
     dynamic_threshold: 0.9 # no use for "low_confidence_static"
     start_with_think: False
-    do_sample: false             # true=采样, false=贪婪解码(评估时使用最佳策略)
+    do_sample: false             # true=sampling, false=greedy decoding (use best strategy during evaluation)
 
 

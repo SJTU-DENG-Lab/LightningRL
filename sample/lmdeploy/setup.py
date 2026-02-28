@@ -25,14 +25,14 @@ def get_version():
 
 
 def parse_requirements(fname='requirements.txt'):
-    """只处理纯 Python 的依赖"""
+    """Only handle pure Python dependencies"""
     requirements = []
     if os.path.exists(fname):
         with open(fname, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    # 忽略 -e 或 git+ 形式的依赖
+                    # Ignore dependencies in -e or git+ form
                     if line.startswith('-e ') or 'git+' in line:
                         continue
                     requirements.append(line)
@@ -49,7 +49,7 @@ setup(
     author_email='openmmlab@gmail.com',
     packages=find_packages(exclude=()),
     include_package_data=True,
-    install_requires=parse_requirements('requirements/runtime_cuda.txt'),  # 或者 runtime_cpu.txt
+    install_requires=parse_requirements('requirements/runtime_cuda.txt'),  # or runtime_cpu.txt
     extras_require={
         'all': parse_requirements('requirements/runtime_cuda.txt'),
         'lite': parse_requirements('requirements/lite.txt'),

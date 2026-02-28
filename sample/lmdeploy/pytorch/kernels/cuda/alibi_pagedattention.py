@@ -783,7 +783,7 @@ def alibi_paged_attention_fwd(
         assert Lq == Lk and Lk == Lv
         assert Lk in {16, 32, 64, 128}
 
-    sm_scale = 1.0 / (Lq**0.5)  # 计算scale系数
+    sm_scale = 1.0 / (Lq**0.5)  # Compute scale factor
     batch, head = b_seq_len.shape[0], q.shape[-2]
     kv_group_num = q.shape[-2] // k[0].shape[-2]
     if num_heads <= 0:
