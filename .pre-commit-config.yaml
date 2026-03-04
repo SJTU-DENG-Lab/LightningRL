@@ -1,0 +1,47 @@
+# 参考 sglang 的 pre-commit 配置
+# https://github.com/sgl-project/sglang
+default_stages: [pre-commit, pre-push, manual]
+exclude: ^(MultiBD|\.venv|sample/lmdeploy)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-ast
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: debug-statements
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.1
+    hooks:
+      - id: ruff
+        args:
+          - --select=F401,F821
+          - --fix
+        files: ^(models/|reward/|train/|sample/|configs/|accelerate_configs/|data/|eval\.py|generate\.py|rl\.py)
+        exclude: |
+          (?x)^(
+          .*/__init__\.py$|
+          .*\.ipynb$|
+          sample/lmdeploy/.*
+          )$
+
+  - repo: https://github.com/psf/black
+    rev: 26.1.0
+    hooks:
+      - id: black

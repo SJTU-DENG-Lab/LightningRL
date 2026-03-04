@@ -1,59 +1,52 @@
-
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
-# ===== Suppress All Warnings and Logs =====
-# Environment variables (must be set before importing libraries)
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-# Set terminal width to fix tqdm progress bar display
 os.environ.setdefault("COLUMNS", "120")
 
 import logging
-# Suppress torch._inductor autotune logs
+
 logging.getLogger("torch._inductor").setLevel(logging.CRITICAL)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning, message=".*None of the inputs have requires_grad.*")
 warnings.filterwarnings("ignore", message=".*is part of.*")
 warnings.filterwarnings("ignore", message=".*docstring.*")
-# ==========================
+
 import json
 import math
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
-import numpy as np
-from PIL import Image
-from omegaconf import OmegaConf
-import wandb
 import torch
-from torch.optim import AdamW
-import torch.nn as nn
-
-from transformers import AutoTokenizer, AutoConfig
+import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import DistributedType, set_seed
-
-
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from train.prompting_utils import UniversalPrompting
-from models.lr_schedulers import get_scheduler
-from models.logging import set_verbosity_info, set_verbosity_error
-from models.value_metrics import compute_value_metrics, format_value_metrics, collect_value_metrics_from_dataset
+from accelerate.utils import set_seed
+from omegaconf import OmegaConf
 from termcolor import cprint
 
-from torch.utils.data import Dataset, DataLoader
+# ===== Flex Attention Support =====
+# Import flex attention - will error if not available
+from torch.nn.attention.flex_attention import BlockMask, create_block_mask
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoTokenizer
+
+from models.logging import set_verbosity_error, set_verbosity_info
+from models.lr_schedulers import get_scheduler
+from models.value_metrics import collect_value_metrics_from_dataset, format_value_metrics
+from train.prompting_utils import UniversalPrompting
 
 SYSTEM_PROMPT_LEN = 28
 
-from train.utils import get_config, flatten_omega_conf, AverageMeter
+from train.utils import AverageMeter, flatten_omega_conf, get_config
 
 
 # ===== Helper Functions for Trainable Mask Computation =====
@@ -76,13 +69,13 @@ def compute_trainable_mask_for_row(dataset, row_idx, L0, L1):
     is_pad = resp_ids.eq(dataset.pad_id)
 
     # Add EOS handling: exclude tokens after the first EOS
-    eos_id = getattr(dataset, 'eos_id', None)
+    eos_id = getattr(dataset, "eos_id", None)
     eos_after_mask = torch.zeros_like(is_pad, dtype=torch.bool)
     if eos_id is not None:
         is_eos = resp_ids.eq(eos_id)
         if is_eos.any():
             first_eos_pos = is_eos.float().argmax(dim=0).item()
-            eos_after_mask[first_eos_pos+1:] = True
+            eos_after_mask[first_eos_pos + 1 :] = True
 
     if dataset.post_num is None:
         trainable = ~is_pad & ~eos_after_mask
@@ -93,7 +86,7 @@ def compute_trainable_mask_for_row(dataset, row_idx, L0, L1):
     # Expand to full sequence (L0 + L1)
     full_mask = torch.zeros(L0 + L1, dtype=torch.bool)
     full_mask[:L0] = True  # Prompt portion
-    full_mask[L0:L0+L1] = trainable  # Response portion
+    full_mask[L0 : L0 + L1] = trainable  # Response portion
     return full_mask
 
 
@@ -117,7 +110,7 @@ def compute_trainable_mask_for_batch(labels, pad_id, L0, post_num):
 
     # Response portion - exclude padding (unless within post_num range)
     if L > L0:
-        is_pad = (labels[:, L0:] == pad_id)
+        is_pad = labels[:, L0:] == pad_id
         if post_num is None:
             trainable_response = ~is_pad
         else:
@@ -128,6 +121,8 @@ def compute_trainable_mask_for_batch(labels, pad_id, L0, post_num):
         trainable[:, L0:] = trainable_response
 
     return trainable
+
+
 # ===== End Helper Functions =====
 
 try:
@@ -148,14 +143,11 @@ def log_gpu_memory(accelerator, message):
             reserved = torch.cuda.memory_reserved(i) / 1024**3
             max_allocated = torch.cuda.max_memory_allocated(i) / 1024**3
             total = torch.cuda.get_device_properties(i).total_memory / 1024**3
-            logger.info(f"[GPU {i}] {message}: "
-                      f"Allocated={allocated:.2f}GB, Reserved={reserved:.2f}GB, "
-                      f"Max={max_allocated:.2f}GB, Total={total:.2f}GB")
-
-
-# ===== Flex Attention Support =====
-# Import flex attention - will error if not available
-from torch.nn.attention.flex_attention import create_block_mask, BlockMask
+            logger.info(
+                f"[GPU {i}] {message}: "
+                f"Allocated={allocated:.2f}GB, Reserved={reserved:.2f}GB, "
+                f"Max={max_allocated:.2f}GB, Total={total:.2f}GB"
+            )
 
 
 def create_flex_block_mask(attention_mask_bool):
@@ -170,44 +162,53 @@ def create_flex_block_mask(attention_mask_bool):
     B, N = attention_mask_bool.shape[:2]
     return create_block_mask(
         lambda b, h, q_idx, kv_idx: attention_mask_bool[b, q_idx, kv_idx],
-        B=B, H=None, Q_LEN=N, KV_LEN=N,
+        B=B,
+        H=None,
+        Q_LEN=N,
+        KV_LEN=N,
     )
+
+
 # ===== End Flex Attention Support =====
-
-
-
-
 
 
 class TrainDataset(Dataset):
     def __init__(
         self,
-        extended_input_ids, p_mask, tok_idx_ext, labels, reward,
+        extended_input_ids,
+        p_mask,
+        tok_idx_ext,
+        labels,
+        reward,
         *,
-        seq_ids,                  # (N_rows,)  The original sequence id (i.e., batch index b) for this row
-        L0, L1,                   # Prompt length, response length
-        step_map_all,             # (B, L1)    Step map for each original sequence (already shrunk)
-        resp_input_ids_all,       # (B, L1)    Response token ids for each original sequence (used for pad/post_num)
-        per_seq_reward,           # (B,)       Scalar reward for each original sequence
-        pad_id, post_num,         # Pad token id and post_num
-        eos_id=None,              # EOS token id for EOS handling logic
-        step_rewards_all=None,    # (B,) list of dicts, per-step rewards
-        correctness_all=None,     # (B,) bool tensor, correctness for each original sequence
-        sample_idx_all=None,      # (N_rows,) Original sample indices for KL penalty mapping
-        resp_idx_all=None         # (N_rows,) Response indices for KL penalty mapping
+        seq_ids,  # (N_rows,)  The original sequence id (i.e., batch index b) for this row
+        L0,
+        L1,  # Prompt length, response length
+        step_map_all,  # (B, L1)    Step map for each original sequence (already shrunk)
+        resp_input_ids_all,  # (B, L1)    Response token ids for each original sequence (used for pad/post_num)
+        per_seq_reward,  # (B,)       Scalar reward for each original sequence
+        pad_id,
+        post_num,  # Pad token id and post_num
+        eos_id=None,  # EOS token id for EOS handling logic
+        step_rewards_all=None,  # (B,) list of dicts, per-step rewards
+        correctness_all=None,  # (B,) bool tensor, correctness for each original sequence
+        sample_idx_all=None,  # (N_rows,) Original sample indices for KL penalty mapping
+        resp_idx_all=None,  # (N_rows,) Response indices for KL penalty mapping
     ):
         self.extended_input_ids = extended_input_ids  # (N_rows, L_ext)
-        self.p_mask  = p_mask                         # (N_rows, L=L0+L1), only valid for the first L positions
-        self.tok_idx_ext = tok_idx_ext               # (N_rows, L)
-        self.labels  = labels                        # (N_rows, L)
-        self.Return  = reward                        # (N_rows, L) Placeholder, will be overwritten with "return" later
+        self.p_mask = p_mask  # (N_rows, L=L0+L1), only valid for the first L positions
+        self.tok_idx_ext = tok_idx_ext  # (N_rows, L)
+        self.labels = labels  # (N_rows, L)
+        self.Return = reward  # (N_rows, L) Placeholder, will be overwritten with "return" later
         # --- Extra fields for aggregation ---
-        self.seq_ids = torch.as_tensor(seq_ids, dtype=torch.long)        # (N_rows,)
-        self.L0 = int(L0); self.L1 = int(L1)
-        self.step_map_all = step_map_all.clone().cpu()                   # (B, L1)
-        self.resp_input_ids_all = resp_input_ids_all.clone().cpu()       # (B, L1)
+        self.seq_ids = torch.as_tensor(seq_ids, dtype=torch.long)  # (N_rows,)
+        self.L0 = int(L0)
+        self.L1 = int(L1)
+        self.step_map_all = step_map_all.clone().cpu()  # (B, L1)
+        self.resp_input_ids_all = resp_input_ids_all.clone().cpu()  # (B, L1)
         self.per_seq_reward = torch.as_tensor(per_seq_reward, dtype=torch.float32)  # (B,)
-        self.pad_id = int(pad_id); self.post_num = int(post_num) if post_num is not None else None
+        self.pad_id = int(pad_id)
+        self.post_num = int(post_num) if post_num is not None else None
         self.eos_id = eos_id  # Store eos_id for EOS handling logic
 
         # Step-level reward support
@@ -246,11 +247,8 @@ class TrainDataset(Dataset):
             self.p_mask[idx],
             self.tok_idx_ext[idx],
             self.labels[idx],
-            self.Return[idx],   
+            self.Return[idx],
         )
-
-
-
 
 
 def main():
@@ -268,6 +266,7 @@ def main():
     # Shared backbone mode: ValueModel wraps SDARForCausalLM with an additional value_head
     from models import SDARForCausalLM
     from train.init_value_model import _get_value_model
+
     value_model_class = _get_value_model(SDARForCausalLM, "value_head")
     value_model = value_model_class.from_pretrained(pretrained_model, trust_remote_code=True, torch_dtype="auto")
 
@@ -327,7 +326,7 @@ def main():
                 kl_penalty_data = kl_data
                 logger.info(f"Loaded pre-computed KL penalty from {kl_file} (old format)")
             else:
-                logger.warning(f"Unexpected KL penalty format, KL will be 0")
+                logger.warning("Unexpected KL penalty format, KL will be 0")
         else:
             logger.warning(f"KL penalty file not found: {kl_file}, KL will be 0")
     elif kl_in_reward_enabled and current_epoch <= 1:
@@ -372,19 +371,16 @@ def main():
     #########################
     logger.info("Loading models and optimizer")
 
-    
-    
-    
-    
-    uni_prompting = UniversalPrompting(tokenizer, max_prompt_len=config.training.max_prompt_len,
-                                       max_gen_length=config.training.max_gen_length,
-                                       ignore_id=-100)
-    
+    uni_prompting = UniversalPrompting(
+        tokenizer,
+        max_prompt_len=config.training.max_prompt_len,
+        max_gen_length=config.training.max_gen_length,
+        ignore_id=-100,
+    )
 
     # calculate loss ourselves, needs logits，so aviod fuse CE
     if hasattr(value_model, "config"):
-        value_model.config.fuse_cross_entropy = False   
-    
+        value_model.config.fuse_cross_entropy = False
 
     if config.training.gradient_checkpointing_enable:
         value_model.gradient_checkpointing_enable()
@@ -415,13 +411,15 @@ def main():
     no_decay = ["bias", "layer_norm.weight", "mlm_ln.weight", "embeddings.weight"]
     optimizer_grouped_parameters = [
         {
-            "params": [p for n, p in value_model.named_parameters() if
-                       p.requires_grad and not any(nd in n for nd in no_decay)],
+            "params": [
+                p for n, p in value_model.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)
+            ],
             "weight_decay": optimizer_config.weight_decay,
         },
         {
-            "params": [p for n, p in value_model.named_parameters() if
-                       p.requires_grad and any(nd in n for nd in no_decay)],
+            "params": [
+                p for n, p in value_model.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)
+            ],
             "weight_decay": 0.0,
         },
     ]
@@ -438,9 +436,6 @@ def main():
     else:
         raise ValueError(f"Optimizer {optimizer_type} not supported")
 
-
-
-
     def collapse_k_unique(lst, k: int):
         if k <= 0:
             raise ValueError("k must be > 0")
@@ -454,47 +449,35 @@ def main():
             rep = uniq[end_idx]
             mapping[val] = rep
         return [mapping[x] for x in lst]
-    
-
-
-
-
-
-
 
     ##################################
     #         DATALOADER             #
     #################################
     logger.info("Creating dataloaders and lr_scheduler")
 
-
     def simple_collate(batch):
-        idx, extended_input_ids, p_mask, tok_idx_ext, labels, Return = zip(*batch)     #Tensor(L)
+        idx, extended_input_ids, p_mask, tok_idx_ext, labels, Return = zip(*batch)  # Tensor(L)
         return {
-            "ids":        torch.tensor(idx),
-            "extended_input_ids":  torch.stack(extended_input_ids),
-            "p_mask":  torch.stack(p_mask),
-            "tok_idx_ext":  torch.stack(tok_idx_ext),
-            "labels":  torch.stack(labels),
-            "Return":     torch.stack(Return),
+            "ids": torch.tensor(idx),
+            "extended_input_ids": torch.stack(extended_input_ids),
+            "p_mask": torch.stack(p_mask),
+            "tok_idx_ext": torch.stack(tok_idx_ext),
+            "labels": torch.stack(labels),
+            "Return": torch.stack(Return),
         }
-    
 
-
-    
-    with open("./" + project_name + "/temp_data/" + config.dataset.optimization_data + ".json", 'r') as f:
+    with open("./" + project_name + "/temp_data/" + config.dataset.optimization_data + ".json", "r") as f:
         dataset_load = json.load(f)
-    #dataset_load = dataset_load[:2000]
-
+    # dataset_load = dataset_load[:2000]
 
     prompt_list = []
     response_list = []
     step_map_list = []
     reward_list = []
     step_rewards_list = []  # List of dicts for step-level reward
-    correctness_list = []   # List of bool for NLL loss (VAPO)
-    sample_idx_list = []    # List of sample indices for KL penalty mapping
-    resp_idx_list = []      # List of response indices for KL penalty mapping
+    correctness_list = []  # List of bool for NLL loss (VAPO)
+    sample_idx_list = []  # List of sample indices for KL penalty mapping
+    resp_idx_list = []  # List of response indices for KL penalty mapping
     for x in dataset_load:
         prompt_list.append(x["prompt"])
         response_list.append(x["response"])
@@ -533,10 +516,9 @@ def main():
         logger.info(f"[uni_prompting] Filtered {drop_num} samples, {len(dataset_load)} remaining")
 
     _, L = input_ids_lm.shape
-    L0    = start_pos
-    L1    = L - L0
+    L0 = start_pos
+    L1 = L - L0
     post_num = config.training.post_num
-
 
     for x in dataset_load:
         if "step_map" not in x.keys():
@@ -548,7 +530,7 @@ def main():
             else:
                 step_map_i = step_map_i + [max(step_map_i) + 1] * (L1 - len(step_map_i))
             step_map_list.append(step_map_i)
-    
+
     def create_block_mask_for_batch(
         B: int,
         L: int,
@@ -623,7 +605,7 @@ def main():
 
         # Ensure each token can attend to itself
         # Fix rows that have no attention by enabling self-attention
-        row_has_no_attention = (bias.sum(dim=-1) == 0)  # (B, N)
+        row_has_no_attention = bias.sum(dim=-1) == 0  # (B, N)
         col_before_start = torch.arange(N, device=device) < L0  # (N,)
         bad = row_has_no_attention & col_before_start.unsqueeze(0)  # (B, N)
 
@@ -642,11 +624,7 @@ def main():
             KV_LEN=N,
         )
 
-
-
-
-    def collect_training_data(input_ids, step_map_list, reward,
-                             sample_idx_list=None, resp_idx_list=None):
+    def collect_training_data(input_ids, step_map_list, reward, sample_idx_list=None, resp_idx_list=None):
         """Collect training data, creating 1 row per sequence with all trainable positions.
 
         Aligned with standard LLM PPO: train all non-padding response tokens,
@@ -704,7 +682,7 @@ def main():
 
             # Compute trainable mask: all non-padding response tokens
             # Response segment is [L0, L0+L1)
-            resp_ids = input_ids_b[L0:L0+L1]  # (L1,)
+            resp_ids = input_ids_b[L0 : L0 + L1]  # (L1,)
             is_pad = resp_ids.eq(pad_id)
 
             # Handle EOS tokens: exclude tokens after the first EOS
@@ -713,7 +691,7 @@ def main():
                 eos_after_mask = torch.zeros_like(is_pad, dtype=torch.bool)
                 if is_eos.any():
                     first_eos_pos = is_eos.float().argmax(dim=0).item()
-                    eos_after_mask[first_eos_pos+1:] = True
+                    eos_after_mask[first_eos_pos + 1 :] = True
             else:
                 eos_after_mask = torch.zeros_like(is_pad, dtype=torch.bool)
 
@@ -728,7 +706,7 @@ def main():
             # Response part: trainable mask
             p_mask_b = torch.zeros(L, dtype=torch.bool, device=input_ids.device)
             p_mask_b[:L0] = True  # prompt part
-            p_mask_b[L0:L0+L1] = resp_trainable  # response part
+            p_mask_b[L0 : L0 + L1] = resp_trainable  # response part
 
             # Store the data
             extended_input_ids_list.append(input_ids_b)
@@ -786,50 +764,68 @@ def main():
         reward_mat = torch.zeros_like(p_mask, dtype=torch.float32)
 
         # Extra return: for later aggregation
-        resp_input_ids_all = input_ids[:, L0:L0+L1].clone().cpu()  # (B, L1)
+        resp_input_ids_all = input_ids[:, L0 : L0 + L1].clone().cpu()  # (B, L1)
 
         return (
-            extended_input_ids, p_mask, tok_idx_ext, labels, reward_mat,
-            seq_ids_rows, sel_step_tail_rows, step_map, resp_input_ids_all,
-            sample_idx_rows, resp_idx_rows
+            extended_input_ids,
+            p_mask,
+            tok_idx_ext,
+            labels,
+            reward_mat,
+            seq_ids_rows,
+            sel_step_tail_rows,
+            step_map,
+            resp_input_ids_all,
+            sample_idx_rows,
+            resp_idx_rows,
         )
 
-        
-
-
-    (extended_input_ids, p_mask, tok_idx_ext, labels, rewards,        # rewards all 0, as place-holder
-        seq_ids_rows, sel_step_tail_rows, step_map_all, resp_input_ids_all,
-        sample_idx_rows, resp_idx_rows) = collect_training_data(
-            input_ids_lm, step_map_list, reward_list,
-            sample_idx_list=sample_idx_list,
-            resp_idx_list=resp_idx_list
-        )
-
-
+    (
+        extended_input_ids,
+        p_mask,
+        tok_idx_ext,
+        labels,
+        rewards,  # rewards all 0, as place-holder
+        seq_ids_rows,
+        sel_step_tail_rows,
+        step_map_all,
+        resp_input_ids_all,
+        sample_idx_rows,
+        resp_idx_rows,
+    ) = collect_training_data(
+        input_ids_lm, step_map_list, reward_list, sample_idx_list=sample_idx_list, resp_idx_list=resp_idx_list
+    )
 
     dataset_lm = TrainDataset(
-        extended_input_ids, p_mask, tok_idx_ext, labels, rewards,
+        extended_input_ids,
+        p_mask,
+        tok_idx_ext,
+        labels,
+        rewards,
         seq_ids=seq_ids_rows,
-        L0=start_pos, L1=(labels.shape[1]-start_pos),
+        L0=start_pos,
+        L1=(labels.shape[1] - start_pos),
         step_map_all=step_map_all,
         resp_input_ids_all=resp_input_ids_all,
         per_seq_reward=torch.as_tensor(reward_list, dtype=torch.float32),
-        pad_id=pad_id, post_num=post_num,
+        pad_id=pad_id,
+        post_num=post_num,
         eos_id=eos_id,
         step_rewards_all=step_rewards_list,
         correctness_all=correctness_list,
         sample_idx_all=sample_idx_rows,  # Use indices from collect_training_data (expanded rows)
-        resp_idx_all=resp_idx_rows        # Use indices from collect_training_data (expanded rows)
+        resp_idx_all=resp_idx_rows,  # Use indices from collect_training_data (expanded rows)
     )
 
     # Validate index length alignment
     if dataset_lm.sample_idx_all is not None and dataset_lm.resp_idx_all is not None:
-        assert len(dataset_lm.sample_idx_all) == len(dataset_lm), \
-            f"sample_idx_all length {len(dataset_lm.sample_idx_all)} != dataset length {len(dataset_lm)}"
-        assert len(dataset_lm.resp_idx_all) == len(dataset_lm), \
-            f"resp_idx_all length {len(dataset_lm.resp_idx_all)} != dataset length {len(dataset_lm)}"
-        assert dataset_lm.sample_idx_all.min() >= 0, \
-            f"sample_idx_all contains negative values"
+        assert len(dataset_lm.sample_idx_all) == len(
+            dataset_lm
+        ), f"sample_idx_all length {len(dataset_lm.sample_idx_all)} != dataset length {len(dataset_lm)}"
+        assert len(dataset_lm.resp_idx_all) == len(
+            dataset_lm
+        ), f"resp_idx_all length {len(dataset_lm.resp_idx_all)} != dataset length {len(dataset_lm)}"
+        assert dataset_lm.sample_idx_all.min() >= 0, "sample_idx_all contains negative values"
         logger.info(f"[Index Validation] sample_idx_all/resp_idx_all length matched: {len(dataset_lm)} rows")
 
     # Load pre-computed KL penalty from rollout phase
@@ -853,23 +849,29 @@ def main():
                     kl_tensor = kl_penalty_data[sample_idx][response_idx]
                     # Get p_mask for this row to determine where to fill KL
                     pm = dataset_lm.p_mask[row_idx]  # (L0+L1,)
-                    tail_mask = pm[L0:L0+L1]  # Only response part
+                    tail_mask = pm[L0 : L0 + L1]  # Only response part
 
                     # KL tensor from rollout is for the full sequence, we need to extract response part
                     # The KL tensor should align with the tokenized response
                     if len(kl_tensor) >= L1:
                         # Fill KL values at p_mask positions
                         kl_values = kl_tensor[-L1:] if len(kl_tensor) > L1 else kl_tensor
-                        dataset_lm.kl_penalty[row_idx, L0:L0+L1] = kl_values[:L1]
+                        dataset_lm.kl_penalty[row_idx, L0 : L0 + L1] = kl_values[:L1]
                     filled_count += 1
                 else:
                     missing_count += 1
-            logger.info(f"[KL Penalty] Filled: {filled_count}/{len(dataset_lm)} rows ({filled_count/len(dataset_lm)*100:.1f}%)")
+            logger.info(
+                f"[KL Penalty] Filled: {filled_count}/{len(dataset_lm)} rows ({filled_count / len(dataset_lm) * 100:.1f}%)"
+            )
             if missing_count > 0:
-                logger.warning(f"[KL Penalty] Missing: {missing_count}/{len(dataset_lm)} rows (KL penalty not found for these indices)")
+                logger.warning(
+                    f"[KL Penalty] Missing: {missing_count}/{len(dataset_lm)} rows (KL penalty not found for these indices)"
+                )
         else:
             # Fallback: use seq_ids (may not work correctly with data_filter)
-            logger.warning("sample_idx_all or resp_idx_all is None, using seq_ids as fallback (may be incorrect with data_filter)")
+            logger.warning(
+                "sample_idx_all or resp_idx_all is None, using seq_ids as fallback (may be incorrect with data_filter)"
+            )
             filled_count = 0
             for row_idx in range(len(dataset_lm)):
                 seq_id = int(dataset_lm.seq_ids[row_idx].item())
@@ -882,17 +884,21 @@ def main():
                     pm = dataset_lm.p_mask[row_idx]
                     if len(kl_tensor) >= L1:
                         kl_values = kl_tensor[-L1:] if len(kl_tensor) > L1 else kl_tensor
-                        dataset_lm.kl_penalty[row_idx, L0:L0+L1] = kl_values[:L1]
+                        dataset_lm.kl_penalty[row_idx, L0 : L0 + L1] = kl_values[:L1]
                     filled_count += 1
-            logger.info(f"[KL Penalty] Filled (fallback): {filled_count}/{len(dataset_lm)} rows ({filled_count/len(dataset_lm)*100:.1f}%)")
+            logger.info(
+                f"[KL Penalty] Filled (fallback): {filled_count}/{len(dataset_lm)} rows ({filled_count / len(dataset_lm) * 100:.1f}%)"
+            )
 
     # Use batch_size_value if specified, otherwise fall back to batch_size_lm for compatibility
-    batch_size_value = OmegaConf.select(config, "training.batch_size_value",
-                                         default=OmegaConf.select(config, "training.batch_size_lm", default=8))
+    batch_size_value = OmegaConf.select(
+        config, "training.batch_size_value", default=OmegaConf.select(config, "training.batch_size_lm", default=8)
+    )
 
     # Use batch_size_value_inference for compute_old_value_parallel (can be larger than training batch size)
-    batch_size_value_inference = OmegaConf.select(config, "training.batch_size_value_inference",
-                                                   default=batch_size_value)  # fallback to batch_size_value
+    batch_size_value_inference = OmegaConf.select(
+        config, "training.batch_size_value_inference", default=batch_size_value
+    )  # fallback to batch_size_value
 
     total_batch_size_lm = batch_size_value * accelerator.num_processes * config.training.gradient_accumulation_steps
     num_update_steps_per_epoch = math.ceil(len(dataset_lm) / total_batch_size_lm)
@@ -905,23 +911,15 @@ def main():
         optimizer=optimizer,
         num_training_steps=max_train_steps,
         num_warmup_steps=config.lr_scheduler.params.warmup_steps,
-        min_lr_scale=config.lr_scheduler.params.min_lr_scale
+        min_lr_scale=config.lr_scheduler.params.min_lr_scale,
     )
 
     # Single DataLoader for both training and inference
     # Use larger batch_size for inference efficiency
     # Training will manually split batches to smaller size if needed
     dataloader_lm = DataLoader(
-        dataset_lm,
-        batch_size=batch_size_value_inference,
-        sampler=None,
-        collate_fn=simple_collate,
-        num_workers=0
+        dataset_lm, batch_size=batch_size_value_inference, sampler=None, collate_fn=simple_collate, num_workers=0
     )
-
-
-
-
 
     ##################################
     #       Prepare accelerator     #
@@ -933,27 +931,17 @@ def main():
     # Ensure model is in training mode (needs reset after DeepSpeed wrapping, otherwise self.training will be False)
     # Both DeepSpeed and Accelerate use the 'module' attribute
     # The train() method of DeepSpeed and Accelerate automatically propagates to inner modules
-    getattr(value_model, 'module', value_model).train()
-
-    import torch.nn.functional as F
-
-
-
-
+    getattr(value_model, "module", value_model).train()
 
     @torch.no_grad()
-    def compute_old_value_parallel(
-            accelerator,
-            dataset,
-            dataloader,
-            start_pos, pad_id):
+    def compute_old_value_parallel(accelerator, dataset, dataloader, start_pos, pad_id):
         """
         Optimized: accumulate locally during loop, gather only once at the end.
         This reduces sync overhead from 2N to 2 (where N = number of batches).
         Note: Uses train() mode instead of eval() to support flex attention.
         """
         # DeepSpeed direct assignment requires explicitly setting training state of inner modules
-        getattr(value_model, 'module', value_model).train()
+        getattr(value_model, "module", value_model).train()
         dl = dataloader
 
         # Local accumulation lists (no sync during loop)
@@ -961,7 +949,7 @@ def main():
         local_values_list = []
 
         for batch in dl:
-            ids        = batch["ids"]  # (b,)
+            ids = batch["ids"]  # (b,)
             extended_input_ids = batch["extended_input_ids"].to(accelerator.device)
             p_mask = batch["p_mask"].to(accelerator.device)
             tok_idx_ext = batch["tok_idx_ext"].to(accelerator.device)
@@ -974,8 +962,8 @@ def main():
             # Synchronize position_ids construction (consistent with policy training)
             # valid_indices: 1=prompt, 2=response, 0=padding
             valid_indices = torch.zeros(B, L, dtype=torch.long, device=device)
-            valid_indices[:, :L0] = 1   # Set prompt portion to 1
-            valid_indices[:, L0:L0+L1] = 2  # Set response portion to 2
+            valid_indices[:, :L0] = 1  # Set prompt portion to 1
+            valid_indices[:, L0 : L0 + L1] = 2  # Set response portion to 2
             # Padding portion stays 0
             position_ids = torch.arange(L, device=device).long().unsqueeze(0).expand(B, -1)
             position_ids = torch.where(valid_indices == 0, torch.zeros_like(position_ids), position_ids)
@@ -984,7 +972,9 @@ def main():
             # Dynamically create block_mask for this batch based on actual input size
             # Note: Flex Attention is compatible with train() + no_grad mode
             attention_mask = create_block_mask_for_batch(
-                B=B, L=L, L0=L0,
+                B=B,
+                L=L,
+                L0=L0,
                 block_size=config.training.block_size,
                 device=device,
                 pad_id=pad_id,
@@ -995,9 +985,9 @@ def main():
             values = value_model(
                 input_ids=extended_input_ids,
                 attention_mask=attention_mask,
-                position_ids=position_ids  # Use modified position_ids (consistent with policy training)
+                position_ids=position_ids,  # Use modified position_ids (consistent with policy training)
             )
-            values = values[:, :L0+L1]  # (B, L0+L1) - keep original response positions
+            values = values[:, : L0 + L1]  # (B, L0+L1) - keep original response positions
             values = torch.where(p_mask, values, torch.zeros_like(values))
 
             # Accumulate locally (CPU) - no sync!
@@ -1007,26 +997,26 @@ def main():
         # After loop: one-time gather (if multi-process)
         if accelerator.num_processes > 1:
             # Concatenate local results
-            local_ids = torch.cat(local_ids_list, dim=0)        # (local_N,)
+            local_ids = torch.cat(local_ids_list, dim=0)  # (local_N,)
             local_values = torch.cat(local_values_list, dim=0)  # (local_N, L)
-            
+
             # Move to device for gather
             local_ids_dev = local_ids.to(accelerator.device)
             local_values_dev = local_values.to(accelerator.device)
-            
+
             # Pad across processes (one sync)
             ids_pad = accelerator.pad_across_processes(local_ids_dev, dim=0, pad_index=-1)
             values_pad = accelerator.pad_across_processes(local_values_dev, dim=0)
-            
+
             # Gather all (one sync)
             ids_all = accelerator.gather(ids_pad)
             values_all = accelerator.gather(values_pad)
-            
+
             # Filter valid and update dataset
             valid = ids_all.ne(-1)
             idx_cpu = ids_all[valid].long().cpu()
             vals_cpu = values_all[valid].float().cpu()
-            
+
             dataset.old_values[idx_cpu] = vals_cpu
         else:
             # Single process: just concatenate and update
@@ -1035,8 +1025,7 @@ def main():
             dataset.old_values[all_ids] = all_values
 
         accelerator.wait_for_everyone()
-        getattr(value_model, 'module', value_model).train()
-
+        getattr(value_model, "module", value_model).train()
 
     #################################
     #             Inference         #
@@ -1049,29 +1038,22 @@ def main():
         dataloader_lm,
         start_pos=start_pos,
         pad_id=pad_id,
-        )
-
-
-
-
-
+    )
 
     #################################
     #             Inference         #
     #################################
     logger.info("***** Calculate Advantage and Return *****")
 
-
-
     def compute_returns_and_advantages_from_fragments(
         dataset: TrainDataset,
         gamma: float,
-        value_lam: float,          # For computing Return (Value model)
-        policy_lam: float,         # For computing Advantage (Policy model)
+        value_lam: float,  # For computing Return (Value model)
+        policy_lam: float,  # For computing Advantage (Policy model)
         *,
         kl_in_reward_enabled: bool = False,
         kl_in_reward_beta: float = 0.01,
-        atol: float = 1e-5
+        atol: float = 1e-5,
     ):
         """
         Read dataset.old_values (nonzero only at p_mask positions),
@@ -1104,9 +1086,9 @@ def main():
             rows_by_seq[s].append(row_idx)
 
         # Clones for writing back later
-        Return_mat = dataset.Return.clone()     # (N_rows, L)
-        adv_mat    = dataset.adv.clone()
-        old_vals   = dataset.old_values.clone() # (N_rows, L)
+        Return_mat = dataset.Return.clone()  # (N_rows, L)
+        adv_mat = dataset.adv.clone()
+        old_vals = dataset.old_values.clone()  # (N_rows, L)
 
         # Process each original sequence
         for s in range(B):
@@ -1114,27 +1096,29 @@ def main():
             if not rows:
                 continue
 
-            step_map_s = dataset.step_map_all[s].clone()          # (L1,)
-            resp_ids_s = dataset.resp_input_ids_all[s].clone()    # (L1,)
+            step_map_s = dataset.step_map_all[s].clone()  # (L1,)
+            resp_ids_s = dataset.resp_input_ids_all[s].clone()  # (L1,)
 
             # Compute trainable mask (response segment):
             # not pad OR (pad but pad count <= post_num)
             is_pad = resp_ids_s.eq(dataset.pad_id)
 
             # Add EOS handling: exclude tokens after the first EOS
-            eos_id = getattr(dataset, 'eos_id', None)
+            eos_id = getattr(dataset, "eos_id", None)
             eos_after_mask = torch.zeros_like(is_pad, dtype=torch.bool)
             if eos_id is not None:
                 is_eos = resp_ids_s.eq(eos_id)
                 if is_eos.any():
                     first_eos_pos = is_eos.float().argmax(dim=0).item()
-                    eos_after_mask[first_eos_pos+1:] = True
+                    eos_after_mask[first_eos_pos + 1 :] = True
 
             if dataset.post_num is None:
                 trainable_mask = ~is_pad & ~eos_after_mask
             else:
                 cum_pad = torch.cumsum(is_pad.int(), dim=0)
-                trainable_mask = (~is_pad & ~eos_after_mask) | (is_pad & (cum_pad <= dataset.post_num) & ~eos_after_mask)
+                trainable_mask = (~is_pad & ~eos_after_mask) | (
+                    is_pad & (cum_pad <= dataset.post_num) & ~eos_after_mask
+                )
 
             # Find the maximum step id in the trainable region
             valid_steps = step_map_s[trainable_mask]
@@ -1143,7 +1127,7 @@ def main():
 
             # Token-level immediate reward r_j
             r_resp = torch.zeros(L1, dtype=torch.float32)
-            
+
             # Step-level reward: assign reward to each step based on step_rewards
             if dataset.step_rewards_all is not None and len(dataset.step_rewards_all) > s:
                 step_rewards_s = dataset.step_rewards_all[s]
@@ -1170,7 +1154,7 @@ def main():
                     tail_mask = pm[L0:]
                     if not tail_mask.any():
                         continue
-                    kl_row = dataset.kl_penalty[row, L0:L0+L1]
+                    kl_row = dataset.kl_penalty[row, L0 : L0 + L1]
                     # Fill KL values (should not overlap due to p_mask design)
                     kl_resp[tail_mask] = kl_row[tail_mask]
 
@@ -1205,20 +1189,20 @@ def main():
             for row in rows:
                 pm = dataset.p_mask[row]  # (L0+L1,)
                 # p_mask is always False in the first L0
-                tail_mask = pm[L0:]       # (L1,)
+                tail_mask = pm[L0:]  # (L1,)
                 if not tail_mask.any():
                     continue
-                vals_row = old_vals[row, L0:L0+L1]  # (L1,)
+                vals_row = old_vals[row, L0 : L0 + L1]  # (L1,)
                 # Each position should only be selected once
-                assert not filled[tail_mask].any(), \
-                    f"sequence {s}: duplicated selection in fragments"
+                assert not filled[tail_mask].any(), f"sequence {s}: duplicated selection in fragments"
                 V_resp[tail_mask] = vals_row[tail_mask]
                 filled[tail_mask] = True
                 union_mask_resp |= tail_mask
 
             # All trainable positions must be covered
-            assert torch.all(union_mask_resp[trainable_mask]), \
-                f"sequence {s}: some trainable tokens lack value predictions"
+            assert torch.all(
+                union_mask_resp[trainable_mask]
+            ), f"sequence {s}: some trainable tokens lack value predictions"
 
             # Build an ordered list of step ids (trainable only)
             uniq_steps = torch.unique(step_map_s[trainable_mask], sorted=True)
@@ -1237,24 +1221,24 @@ def main():
 
             # Backward recursion for R_t^*
             R_star = torch.zeros(S, dtype=torch.float32)
-            for i in range(S-1, -1, -1):
-                R_star[i] = r_star[i] + (gamma * R_star[i+1] if i+1 < S else 0.0)
+            for i in range(S - 1, -1, -1):
+                R_star[i] = r_star[i] + (gamma * R_star[i + 1] if i + 1 < S else 0.0)
 
             # TD residual and step-level GAE
             delta_star = torch.zeros(S, dtype=torch.float32)
             for i in range(S):
-                v_next = V_star[i+1] if i+1 < S else 0.0
+                v_next = V_star[i + 1] if i + 1 < S else 0.0
                 delta_star[i] = r_star[i] - V_star[i] + gamma * v_next
 
             # ============ Compute Value_A (for Return) ============
             A_star_value = torch.zeros(S, dtype=torch.float32)
-            for i in range(S-1, -1, -1):
-                A_star_value[i] = delta_star[i] + (gamma * value_lam * A_star_value[i+1] if i+1 < S else 0.0)
+            for i in range(S - 1, -1, -1):
+                A_star_value[i] = delta_star[i] + (gamma * value_lam * A_star_value[i + 1] if i + 1 < S else 0.0)
 
             # ============ Compute Policy_A (for Advantage) ============
             A_star_policy = torch.zeros(S, dtype=torch.float32)
-            for i in range(S-1, -1, -1):
-                A_star_policy[i] = delta_star[i] + (gamma * policy_lam * A_star_policy[i+1] if i+1 < S else 0.0)
+            for i in range(S - 1, -1, -1):
+                A_star_policy[i] = delta_star[i] + (gamma * policy_lam * A_star_policy[i + 1] if i + 1 < S else 0.0)
 
             # Map back to tokens: R_j, A_j
             R_resp = torch.zeros(L1, dtype=torch.float32)
@@ -1263,10 +1247,10 @@ def main():
                 sid = int(step_map_s[pos].item())
                 i = step_to_rank[sid]
                 rj = r_resp[pos]
-                R_next = R_star[i+1] if i+1 < S else 0.0
-                V_next = V_star[i+1] if i+1 < S else 0.0
-                A_value_next = A_star_value[i+1] if i+1 < S else 0.0
-                A_policy_next = A_star_policy[i+1] if i+1 < S else 0.0
+                R_next = R_star[i + 1] if i + 1 < S else 0.0
+                V_next = V_star[i + 1] if i + 1 < S else 0.0
+                A_value_next = A_star_value[i + 1] if i + 1 < S else 0.0
+                A_policy_next = A_star_policy[i + 1] if i + 1 < S else 0.0
 
                 # Return = token-level standard Return (does not depend on V, avoids circular dependency)
                 R_resp[pos] = rj + gamma * R_next
@@ -1274,21 +1258,21 @@ def main():
                 A_resp[pos] = (rj - V_resp[pos]) + gamma * V_next + gamma * policy_lam * A_policy_next
 
             # Write back into fragment rows (nonzero only at p_mask positions)
-            R_full = torch.zeros(L0+L1, dtype=torch.float32)
-            A_full = torch.zeros(L0+L1, dtype=torch.float32)
+            R_full = torch.zeros(L0 + L1, dtype=torch.float32)
+            A_full = torch.zeros(L0 + L1, dtype=torch.float32)
             R_full[L0:] = R_resp
             A_full[L0:] = A_resp
 
             for row in rows:
                 pm = dataset.p_mask[row]
                 Return_mat[row][pm] = R_full[pm]
-                adv_mat[row][pm]    = A_full[pm]
+                adv_mat[row][pm] = A_full[pm]
 
             # Assertion 1: when gamma=value_lam=policy_lam=1,
             # For sequence-level reward: R_j equals the sequence reward (all tokens same)
             # For step-level reward: R_j for step i = sum of step_rewards from step i to last step
             # Note: A_j = R_j - V_j^{old} only when policy_lam=1, otherwise A uses different lambda
-            if (abs(gamma - 1.0) < 1e-8 and abs(value_lam - 1.0) < 1e-8 and abs(policy_lam - 1.0) < 1e-8):
+            if abs(gamma - 1.0) < 1e-8 and abs(value_lam - 1.0) < 1e-8 and abs(policy_lam - 1.0) < 1e-8:
                 # Compute expected Return for each token position
                 expected_R_resp = torch.zeros(L1, dtype=torch.float32)
 
@@ -1301,8 +1285,7 @@ def main():
                             i = step_to_rank[int(sid)]
                             # Sum of rewards from step i to last step
                             cumsum_from_i = sum(
-                                step_rewards_s.get(int(uniq_steps[j].item()), 0.0)
-                                for j in range(i, S)
+                                step_rewards_s.get(int(uniq_steps[j].item()), 0.0) for j in range(i, S)
                             )
                             mask = (step_map_s == int(sid)) & trainable_mask
                             expected_R_resp[mask] = cumsum_from_i
@@ -1322,18 +1305,19 @@ def main():
                     V_row = old_vals[row][pm]
                     A_row = adv_mat[row][pm]
                     R_expected = expected_R_full[pm]
-                    assert torch.allclose(R_row, R_expected, atol=atol), \
-                        f"gamma=value_lam=policy_lam=1 check failed (R) at seq {s}, row {row}"
+                    assert torch.allclose(
+                        R_row, R_expected, atol=atol
+                    ), f"gamma=value_lam=policy_lam=1 check failed (R) at seq {s}, row {row}"
                     # When policy_lam=1, A = R - V
-                    assert torch.allclose(A_row, R_row - V_row, atol=atol), \
-                        f"gamma=value_lam=policy_lam=1 check failed (A=R-V) at seq {s}, row {row}"
+                    assert torch.allclose(
+                        A_row, R_row - V_row, atol=atol
+                    ), f"gamma=value_lam=policy_lam=1 check failed (A=R-V) at seq {s}, row {row}"
 
             # Assertion 2 is skipped since value_lam is typically 0.95 or 1.0, not 0
 
         # write back to data
         dataset.Return = Return_mat
-        dataset.adv    = adv_mat
-
+        dataset.adv = adv_mat
 
     gam = config.training.gam
     kl_in_reward_beta = OmegaConf.select(config, "kl_in_reward.beta", default=0.01)
@@ -1353,10 +1337,13 @@ def main():
         cprint(f"[Value Pretraining] value_lam={value_lam}", "cyan")
 
     compute_returns_and_advantages_from_fragments(
-        dataset_lm, gam, value_lam, policy_lam,
+        dataset_lm,
+        gam,
+        value_lam,
+        policy_lam,
         kl_in_reward_enabled=kl_in_reward_enabled,
         kl_in_reward_beta=kl_in_reward_beta,
-        atol=1e-5
+        atol=1e-5,
     )
 
     # Compute and log Value Model metrics
@@ -1366,96 +1353,84 @@ def main():
             # Output file path for value metrics
             value_results_file = f"./{project_name}/results/results-rl-.{project_name}.ckpt.optimized_value-{config.dataset.train_dataset}.txt"
             metrics_str = format_value_metrics(
-                value_metrics, 
-                epoch=config.experiment.current_epoch,
-                output_file=value_results_file
+                value_metrics, epoch=config.experiment.current_epoch, output_file=value_results_file
             )
             logger.info("\n" + metrics_str)
         except Exception as e:
             logger.warning(f"Failed to compute value metrics: {e}")
 
     # Save metrics to temp file for pretrain convergence check (if in pretrain mode)
-    if is_value_pretraining and accelerator.is_main_process and 'value_metrics' in locals():
+    if is_value_pretraining and accelerator.is_main_process and "value_metrics" in locals():
         metrics_file = Path(project_name) / "temp_data" / "value_pretrain_metrics.json"
         metrics_file.parent.mkdir(parents=True, exist_ok=True)
         # Convert torch tensors to python types for JSON serialization
-        metrics_json = {k: float(v) if hasattr(v, 'item') else v for k, v in value_metrics.items()}
+        metrics_json = {k: float(v) if hasattr(v, "item") else v for k, v in value_metrics.items()}
         with open(metrics_file, "w") as f:
             json.dump(metrics_json, f)
         logger.info(f"[Value Pretrain] Saved metrics to {metrics_file}")
 
-
-    def save_dataset_tensors(dataset_lm, save_dir, name, accelerator, *,
-                         start_pos: int, drop_num: int):
-        from pathlib import Path, PurePath
+    def save_dataset_tensors(dataset_lm, save_dir, name, accelerator, *, start_pos: int, drop_num: int):
         import time
+        from pathlib import Path
+
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
 
         payload = {
             "extended_input_ids": dataset_lm.extended_input_ids,  # (N, L_ext)
-            "p_mask":            dataset_lm.p_mask,               # (N, L)
-            "tok_idx_ext":       dataset_lm.tok_idx_ext,          # (N, L)
-            "labels":            dataset_lm.labels,               # (N, L)
-            "adv":               dataset_lm.adv,                  # (N, L)
-            "per_seq_reward":    dataset_lm.per_seq_reward,       # (B,) scalar reward for each original sequence
-            "seq_ids":           dataset_lm.seq_ids,              # (N,) mapping from row to original sequence
-            "correctness_all":   dataset_lm.correctness_all,      # (B,) bool, correctness for each original sequence
-            "sample_idx_all":    dataset_lm.sample_idx_all,       # (N,) original sample indices for KL penalty mapping
-            "resp_idx_all":      dataset_lm.resp_idx_all,         # (N,) response indices for KL penalty mapping
+            "p_mask": dataset_lm.p_mask,  # (N, L)
+            "tok_idx_ext": dataset_lm.tok_idx_ext,  # (N, L)
+            "labels": dataset_lm.labels,  # (N, L)
+            "adv": dataset_lm.adv,  # (N, L)
+            "per_seq_reward": dataset_lm.per_seq_reward,  # (B,) scalar reward for each original sequence
+            "seq_ids": dataset_lm.seq_ids,  # (N,) mapping from row to original sequence
+            "correctness_all": dataset_lm.correctness_all,  # (B,) bool, correctness for each original sequence
+            "sample_idx_all": dataset_lm.sample_idx_all,  # (N,) original sample indices for KL penalty mapping
+            "resp_idx_all": dataset_lm.resp_idx_all,  # (N,) response indices for KL penalty mapping
             # ===== Additional fields for train_policy_no_value.py =====
-            "L0":                dataset_lm.L0,                   # Prompt length
-            "L1":                dataset_lm.L1,                   # Response length
-            "pad_id":            dataset_lm.pad_id,               # Pad token id
-            "post_num":          dataset_lm.post_num,             # Post padding count
-            "step_map_all":      dataset_lm.step_map_all,         # (B, L1) Step map for each original sequence
+            "L0": dataset_lm.L0,  # Prompt length
+            "L1": dataset_lm.L1,  # Response length
+            "pad_id": dataset_lm.pad_id,  # Pad token id
+            "post_num": dataset_lm.post_num,  # Post padding count
+            "step_map_all": dataset_lm.step_map_all,  # (B, L1) Step map for each original sequence
             "resp_input_ids_all": dataset_lm.resp_input_ids_all,  # (B, L1) Response token ids for each original sequence
-            "step_rewards_all":  dataset_lm.step_rewards_all,     # List of dicts, per-step rewards
+            "step_rewards_all": dataset_lm.step_rewards_all,  # List of dicts, per-step rewards
             # ===== Metadata =====
             "meta": {
                 "time": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "start_pos": int(start_pos),
-                "drop_num":  int(drop_num),
+                "drop_num": int(drop_num),
             },
         }
 
         if accelerator.is_main_process:
             torch.save(payload, save_dir / f"{name}.pt")
 
-
     save_dataset_tensors(
-        dataset_lm,                      #  extended_input_ids / p_mask / tok_idx_ext / labels / adv
+        dataset_lm,  #  extended_input_ids / p_mask / tok_idx_ext / labels / adv
         save_dir=Path(config.experiment.project) / "temp_data",
-        name=f"{config.dataset.optimization_data}",  
+        name=f"{config.dataset.optimization_data}",
         accelerator=accelerator,
-        start_pos = start_pos,
-        drop_num = drop_num
+        start_pos=start_pos,
+        drop_num=drop_num,
     )
-
-
 
     if config.experiment.current_epoch % config.experiment.train_value_every != 0:
         accelerator.wait_for_everyone()
         # Free GPU memory before NCCL cleanup to avoid OOM
         import gc
+
         gc.collect()
         torch.cuda.empty_cache()
         accelerator.end_training()
         return
 
-
-
-
     #################################
     #             Training          #
     #################################
-    
 
-    
-
-    
     logger.info("***** Running training *****")
-    
+
     logger.info(f"  Num response = {len(dataset_load)}")
     logger.info(f"  Num sample dropped = {drop_num}")
     logger.info(f"  Num training / inference data = {input_ids_lm.shape[0]}")
@@ -1469,22 +1444,17 @@ def main():
     data_time_m = AverageMeter()
     end = time.time()
 
-
-
-
-
-
-
     def forward_process(extended_input_ids, p_mask, tok_idx_ext, Return, old_values):
-
         B, L = p_mask.shape
-        L0    = start_pos
-        L1    = L - L0
+        L0 = start_pos
+        L1 = L - L0
         device = extended_input_ids.device
 
         # Dynamically create block_mask for this batch based on actual input size
         attention_mask = create_block_mask_for_batch(
-            B=B, L=L, L0=L0,
+            B=B,
+            L=L,
+            L0=L0,
             block_size=config.training.block_size,
             device=device,
             pad_id=pad_id,
@@ -1494,13 +1464,13 @@ def main():
         # Synchronize position_ids construction (following DiRL approach, consistent with policy training)
         # valid_indices: 1=prompt, 2=response, 0=padding
         valid_indices = torch.zeros(B, L, dtype=torch.long, device=device)
-        valid_indices[:, :L0] = 1   # Set prompt portion to 1
-        valid_indices[:, L0:L0+L1] = 2  # Set response portion to 2
+        valid_indices[:, :L0] = 1  # Set prompt portion to 1
+        valid_indices[:, L0 : L0 + L1] = 2  # Set response portion to 2
         # Padding portion stays 0
         position_ids = torch.arange(L, device=device).long().unsqueeze(0).expand(B, -1)
         position_ids = torch.where(valid_indices == 0, torch.zeros_like(position_ids), position_ids)
-        values = value_model(input_ids = extended_input_ids, attention_mask=attention_mask, position_ids = position_ids)
-        values = values[:, :L0+L1]  # Keep original response positions
+        values = value_model(input_ids=extended_input_ids, attention_mask=attention_mask, position_ids=position_ids)
+        values = values[:, : L0 + L1]  # Keep original response positions
         # [NEW] No longer zero out values; p_mask includes all trainable positions (aligned with standard LLM PPO)
         # Old implementation: values = torch.where(p_mask, values, torch.zeros_like(values))
 
@@ -1510,12 +1480,6 @@ def main():
         loss = ((values - Return) ** 2 * p_mask).sum() / p_mask.sum()
 
         return loss
-
-
-
-
-
-
 
     from tqdm.auto import tqdm
 
@@ -1538,8 +1502,8 @@ def main():
                 "gradient_accumulation_steps": config.training.gradient_accumulation_steps,
                 "total_batch_size": total_batch_size_lm,
                 "learning_rate": config.optimizer.params.value_learning_rate,
-                "num_training_data": p_mask.shape[0]
-            }
+                "num_training_data": p_mask.shape[0],
+            },
         }
         metrics_fp.write(json.dumps(config_header) + "\n")
         metrics_fp.flush()
@@ -1549,8 +1513,7 @@ def main():
     total_batches = len(dataloader_lm)
 
     for epoch in range(first_epoch, num_train_epochs):
-
-        getattr(value_model, 'module', value_model).train()
+        getattr(value_model, "module", value_model).train()
 
         # Accumulators for gradient accumulation steps
         acc_loss = 0.0
@@ -1559,15 +1522,13 @@ def main():
 
         progress_bar = tqdm(
             dataloader_lm,
-            desc=f"Epoch {epoch+1}/{num_train_epochs}",
+            desc=f"Epoch {epoch + 1}/{num_train_epochs}",
             disable=not accelerator.is_local_main_process,
             ncols=120,
-            leave=True
+            leave=True,
         )
 
-
         for step, batch in enumerate(progress_bar, start=1):
-
             # Split large batch into smaller batches for training
             # DataLoader batch_size = batch_size_value_inference (e.g., 32)
             # Training batch_size = batch_size_value (e.g., 8)
@@ -1592,12 +1553,12 @@ def main():
                 old_values = dataset_lm.old_values[micro_batch["ids"].cpu()].to(accelerator.device)
 
                 loss_lm = forward_process(
-                        extended_input_ids=micro_batch["extended_input_ids"],
-                        p_mask=micro_batch["p_mask"],
-                        tok_idx_ext=micro_batch["tok_idx_ext"],
-                        Return=micro_batch["Return"],
-                        old_values=old_values
-                    )
+                    extended_input_ids=micro_batch["extended_input_ids"],
+                    p_mask=micro_batch["p_mask"],
+                    tok_idx_ext=micro_batch["tok_idx_ext"],
+                    Return=micro_batch["Return"],
+                    old_values=old_values,
+                )
 
                 # Note: loss is already correctly normalized in forward_process:
                 # loss = ((values - Return) ** 2 * p_mask).sum() / p_mask.sum()
@@ -1612,13 +1573,17 @@ def main():
 
                 # Fix: force update after last batch
                 is_last_batch = (step == total_batches) and (micro_idx == num_micro_batches - 1)
-                should_update = ((micro_step_count + 1) % accelerator.gradient_accumulation_steps == 0) or is_last_batch
+                should_update = (
+                    (micro_step_count + 1) % accelerator.gradient_accumulation_steps == 0
+                ) or is_last_batch
 
                 if should_update:
                     # Clip gradients and get grad_norm
                     grad_norm = None
                     if config.training.max_grad_norm is not None:
-                        grad_norm = accelerator.clip_grad_norm_(value_model.parameters(), config.training.max_grad_norm)
+                        grad_norm = accelerator.clip_grad_norm_(
+                            value_model.parameters(), config.training.max_grad_norm
+                        )
 
                     optimizer.step()
                     lr_scheduler.step()
@@ -1629,10 +1594,16 @@ def main():
                     # Compute averaged metrics
                     avg_loss = acc_loss / acc_count if acc_count > 0 else 0.0
                     current_lr = lr_scheduler.get_last_lr()[0]
-                    grad_norm_value = grad_norm.item() if isinstance(grad_norm, torch.Tensor) else (grad_norm if grad_norm is not None else 0.0)
+                    grad_norm_value = (
+                        grad_norm.item()
+                        if isinstance(grad_norm, torch.Tensor)
+                        else (grad_norm if grad_norm is not None else 0.0)
+                    )
 
                     # Log to console
-                    logger.info(f"Step {global_step} (batch {step}/{total_batches}): loss={avg_loss:.6f}, grad_norm={grad_norm_value:.4f}, lr={current_lr:.2e}")
+                    logger.info(
+                        f"Step {global_step} (batch {step}/{total_batches}): loss={avg_loss:.6f}, grad_norm={grad_norm_value:.4f}, lr={current_lr:.2e}"
+                    )
 
                     # Write step metrics to file
                     if accelerator.is_main_process and metrics_fp is not None:
@@ -1645,8 +1616,8 @@ def main():
                                 "total_batches": total_batches,
                                 "loss": avg_loss,
                                 "grad_norm": grad_norm_value,
-                                "lr": current_lr
-                            }
+                                "lr": current_lr,
+                            },
                         }
                         metrics_fp.write(json.dumps(step_data) + "\n")
                         metrics_fp.flush()
@@ -1664,24 +1635,19 @@ def main():
                 del loss_lm
                 del micro_batch
                 torch.cuda.empty_cache()
-            
-
-                
-
-
 
         # Record epoch metrics to jsonl file
         if metrics_fp is not None and len(loss_list) > 0:
             epoch_avg_loss = sum(loss_list) / len(loss_list)
-            current_lr = optimizer.param_groups[0]['lr']
+            current_lr = optimizer.param_groups[0]["lr"]
             epoch_metrics = {
                 "type": "epoch_metrics",
                 "data": {
                     "epoch": epoch + 1,
                     "avg_loss": epoch_avg_loss,
                     "learning_rate": current_lr,
-                    "num_steps": global_step
-                }
+                    "num_steps": global_step,
+                },
             }
             metrics_fp.write(json.dumps(epoch_metrics) + "\n")
             metrics_fp.flush()
@@ -1695,6 +1661,7 @@ def main():
     torch.cuda.empty_cache()
     torch.cuda.synchronize()
     import gc
+
     gc.collect()
 
     # Record GPU memory after training loop
@@ -1720,11 +1687,7 @@ def main():
     if accelerator.is_main_process and metrics_fp is not None:
         summary = {
             "type": "summary",
-            "data": {
-                "total_global_steps": global_step,
-                "total_epochs": num_train_epochs,
-                "training_completed": True
-            }
+            "data": {"total_global_steps": global_step, "total_epochs": num_train_epochs, "training_completed": True},
         }
         metrics_fp.write(json.dumps(summary) + "\n")
         metrics_fp.close()
@@ -1739,27 +1702,25 @@ def main():
 
     # Free GPU memory before NCCL cleanup to avoid OOM during destroy_process_group
     import gc
+
     gc.collect()
     torch.cuda.empty_cache()
 
     accelerator.end_training()
 
-
-
     if accelerator.is_main_process:
-
         outputs_name = "rl-" + pretrained_model.replace("/", ".") + "-" + config.dataset.train_dataset
 
-        def _mean(x): 
-            return float(sum(x) / max(1, len(x))) 
+        def _mean(x):
+            return float(sum(x) / max(1, len(x)))
 
         temp_len = 50
         first = loss_list[:temp_len]
-        last  = loss_list[-temp_len:] if len(loss_list) >= temp_len else loss_list
+        last = loss_list[-temp_len:] if len(loss_list) >= temp_len else loss_list
 
         first_few_avg_loss = _mean(first)
-        last_few_avg_loss  = _mean(last)
-        avg_loss           = _mean(loss_list)
+        last_few_avg_loss = _mean(last)
+        avg_loss = _mean(loss_list)
 
         output_text = (
             f"train step: {config.experiment.current_epoch}  "
@@ -1775,24 +1736,16 @@ def main():
         cprint("\n\n" + output_text, color="green")
         with open(outputs_result_name, "a", encoding="utf-8", buffering=1) as f:
             f.write(output_text + "\n")
-    
-
-
-
-
-    
-        
-
-
-
-
-
-
 
 
 def save_checkpoint(model, tokenizer, config, accelerator, name):
+    import glob
+    import importlib
+    import inspect
+    import json
+    import os
+    import time
     from pathlib import Path
-    import time, json, shutil, os, glob, importlib, inspect
 
     output_dir = Path(config.experiment.project)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1867,17 +1820,5 @@ def save_checkpoint(model, tokenizer, config, accelerator, name):
         logger.info(f"Saved model + tokenizer to {save_dir}")
 
 
-
-
-
 if __name__ == "__main__":
     main()
-
-
-
-
-    
-    
-
-
-    

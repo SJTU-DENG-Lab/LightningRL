@@ -4,42 +4,24 @@ Value Model Initialization Script
 This script initializes the value model for RL training.
 Value head is explicitly initialized to zero.
 """
+
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 import json
-import logging
-import math
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Tuple, Union
 
-import numpy as np
-from PIL import Image
-from omegaconf import OmegaConf
-import wandb
 import torch
-from torch.optim import AdamW
 import torch.nn as nn
-
-from transformers import AutoTokenizer, AutoConfig
-from accelerate import Accelerator
-from accelerate.utils import DistributedType, set_seed
-
-
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from train.prompting_utils import UniversalPrompting
-from models.lr_schedulers import get_scheduler
-from models.logging import set_verbosity_info, set_verbosity_error
-
-from torch.utils.data import Dataset, DataLoader
+from transformers import AutoConfig, AutoTokenizer
 
 SYSTEM_PROMPT_LEN = 28
 
-from train.utils import get_config, flatten_omega_conf, AverageMeter
+from train.utils import get_config
 
 try:
     import apex
@@ -52,34 +34,31 @@ except ImportError:
 from termcolor import cprint
 
 
-
-
 def _get_value_model(base_llm_class, value_head_prefix="value_head"):
     class ValueModel(base_llm_class):
         def __init__(self, config: AutoConfig):
             try:
                 import deepspeed
+
                 zero_off = deepspeed.zero.Init(enabled=False)
             except Exception:
                 from contextlib import nullcontext
+
                 zero_off = nullcontext()
 
             with zero_off:
-                super().__init__(config)   
+                super().__init__(config)
 
             self.value_head_prefix = value_head_prefix
             vh = nn.Linear(config.hidden_size, 1, bias=False)
             setattr(self, value_head_prefix, vh)
 
         def forward(self, input_ids=None, attention_mask=None, position_ids=None, **kwargs):
-            outputs = self.model(
-                input_ids, attention_mask=attention_mask, position_ids=position_ids, **kwargs
-            )
+            outputs = self.model(input_ids, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
             last_hidden_states = outputs["last_hidden_state"]
             return getattr(self, self.value_head_prefix)(last_hidden_states).squeeze(-1)
 
     return ValueModel
-
 
 
 def main():
@@ -87,10 +66,8 @@ def main():
 
     pretrained_model = config.model.value_base_model
 
-    from transformers import AutoConfig
-    from termcolor import cprint
-
     from models import SDARForCausalLM
+
     value_model_class = _get_value_model(SDARForCausalLM, "value_head")
 
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model, trust_remote_code=True)
@@ -108,19 +85,11 @@ def main():
     save_checkpoint(value_model, tokenizer, config, config.model.optimized_value_name)
 
 
-
-
-
-
-
-
-
-
-
 def save_checkpoint(model, tokenizer, config, name, accelerator=None):
-    from pathlib import Path
-    import time, json, shutil, os, glob, importlib, inspect
-    import torch
+    import glob
+    import importlib
+    import inspect
+    import os
 
     output_dir = Path(f"../{config.experiment.project}")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -129,6 +98,7 @@ def save_checkpoint(model, tokenizer, config, name, accelerator=None):
         if accelerator is not None:
             return accelerator.is_main_process
         import torch.distributed as dist
+
         return (not dist.is_available()) or (not dist.is_initialized()) or dist.get_rank() == 0
 
     is_main = _is_main()
@@ -154,7 +124,7 @@ def save_checkpoint(model, tokenizer, config, name, accelerator=None):
     else:
         model_to_save = model
         state_dict = model.state_dict()
-        save_function = None  
+        save_function = None
 
     if is_main:
         save_dir = save_base / name
@@ -162,7 +132,7 @@ def save_checkpoint(model, tokenizer, config, name, accelerator=None):
             save_dir,
             state_dict=state_dict,
             safe_serialization=True,
-            save_function=save_function, 
+            save_function=save_function,
         )
         tokenizer.save_pretrained(str(save_dir))
 
@@ -189,7 +159,7 @@ def save_checkpoint(model, tokenizer, config, name, accelerator=None):
                             if not os.path.exists(dst):
                                 shutil.copy2(fn, dst)
                                 copied += 1
-                except Exception as e:
+                except Exception:
                     pass
 
         _copy_dynamic_modules(str(save_dir), model_to_save, tokenizer)
@@ -198,12 +168,11 @@ def save_checkpoint(model, tokenizer, config, name, accelerator=None):
         with (save_base / "metadata.json").open("w") as f:
             json.dump(metadata, f, indent=2)
 
-
     if accelerator is None:
         import torch.distributed as dist
+
         if dist.is_available() and dist.is_initialized():
             dist.barrier()
-
 
 
 if __name__ == "__main__":

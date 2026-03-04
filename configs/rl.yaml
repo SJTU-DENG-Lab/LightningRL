@@ -32,7 +32,7 @@ model:
 dataset:
     train_dataset: "GSM8K_train" # "MATH_train""PrimeIntellect"
     optimization_data: "rl_data" # name of the rollout data output
-    data_type: "math" # "math" "code" 
+    data_type: "math" # "math" "code"
 
 # also see explanations in eval configs
 rollout:
@@ -156,5 +156,3 @@ evaluation:
     dynamic_threshold: 0.9 # no use for "low_confidence_static"
     start_with_think: False
     do_sample: false             # true=sampling, false=greedy decoding (use best strategy during evaluation)
-
-

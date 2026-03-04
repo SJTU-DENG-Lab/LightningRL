@@ -77,6 +77,7 @@ def get_mask_schedule(method, **schedule_kwargs):
     else:
         raise ValueError("Unknown schedule method: {}".format(method))
 
+
 def top_k_top_p_filtering(
     logits: torch.Tensor,
     top_k: int = 0,

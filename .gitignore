@@ -41,3 +41,7 @@ venv/
 
 # Soft Link
 MultiBD
+sglang
+
+# Temp data
+uv.lock

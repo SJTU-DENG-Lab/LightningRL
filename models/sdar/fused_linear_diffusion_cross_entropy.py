@@ -27,30 +27,15 @@ from torch.distributed.tensor.parallel import ParallelStyle
 MAX_FUSED_SIZE = 65536 // 2
 
 
-@triton.heuristics({
-    'HAS_SCALE': lambda args: args['scale'] is not None
-})
-@triton.autotune(
-    configs=[
-        triton.Config({}, num_warps=num_warps)
-        for num_warps in [1, 2, 4, 8, 16, 32]
-    ],
-    key=['D']
-)
+@triton.heuristics({"HAS_SCALE": lambda args: args["scale"] is not None})
+@triton.autotune(configs=[triton.Config({}, num_warps=num_warps) for num_warps in [1, 2, 4, 8, 16, 32]], key=["D"])
 @triton.jit
-def logsumexp_fwd_kernel(
-    x,
-    z,
-    scale,
-    D: tl.constexpr,
-    B: tl.constexpr,
-    HAS_SCALE: tl.constexpr
-):
+def logsumexp_fwd_kernel(x, z, scale, D: tl.constexpr, B: tl.constexpr, HAS_SCALE: tl.constexpr):
     i_n, i_d = tl.program_id(0).to(tl.int64), tl.program_id(1).to(tl.int64)
     o_d = i_d * B + tl.arange(0, B)
     m_d = o_d < D
 
-    b_x = tl.load(x + i_n * D + o_d, mask=m_d, other=-float('inf'))
+    b_x = tl.load(x + i_n * D + o_d, mask=m_d, other=-float("inf"))
     if HAS_SCALE:
         b_x = b_x * scale
     b_m = tl.max(b_x, 0)
@@ -58,11 +43,7 @@ def logsumexp_fwd_kernel(
     tl.store(z + i_n * tl.cdiv(D, B) + i_d, b_z)
 
 
-def logsumexp_fwd(
-    x,
-    scale: Optional[float] = None,
-    dtype: Optional[torch.dtype] = None
-):
+def logsumexp_fwd(x, scale: Optional[float] = None, dtype: Optional[torch.dtype] = None):
     r"""
     Compute the logsumexp of the input tensor over the last dimension.
 
@@ -84,17 +65,12 @@ def logsumexp_fwd(
     ND = triton.cdiv(D, B)
 
     z = x.new_empty(N, ND, dtype=torch.float)
-    logsumexp_fwd_kernel[(N, ND)](
-        x=x,
-        z=z,
-        scale=scale,
-        D=D,
-        B=B
-    )
+    logsumexp_fwd_kernel[(N, ND)](x=x, z=z, scale=scale, D=D, B=B)
     z = z.logsumexp(-1).view(*shape[:-1])
     if dtype is not None and dtype != torch.float:
         z = z.to(dtype)
     return z
+
 
 @triton.jit
 def cross_entropy_kernel(
@@ -109,7 +85,7 @@ def cross_entropy_kernel(
     logit_scale: tl.constexpr,
     reduction: tl.constexpr,
     V: tl.constexpr,
-    BV: tl.constexpr
+    BV: tl.constexpr,
 ):
     """
     This kernel computes both cross entropy loss and the gradient of the input.
@@ -190,12 +166,12 @@ def cross_entropy_kernel(
     #      = dx_i - (1 - label_smoothing) / N
     for iv in range(0, NV):
         o_v = iv * BV + tl.arange(0, BV)
-        b_logits = tl.load(logits + o_v, mask=o_v < V, other=float('-inf')) * logit_scale
+        b_logits = tl.load(logits + o_v, mask=o_v < V, other=float("-inf")) * logit_scale
         if label_smoothing > 0:
             # scale X beforehand to avoid overflow
             b_z += tl.sum(tl.where(o_v < V, -eps * b_logits, 0.0))
         b_p = (tl.exp(b_logits - b_lse) - eps) * logit_scale
-        b_p /= b_p_mask # modified
+        b_p /= b_p_mask  # modified
         if reduction == "mean":
             b_p = b_p / total
         tl.store(logits + o_v, b_p, mask=o_v < V)
@@ -219,7 +195,7 @@ def cross_entropy_kernel(
     b_l = tl.load(logits + b_y)
 
     # Normalize the loss by the number of non-ignored elements if reduction is "mean"
-    if reduction == 'mean':
+    if reduction == "mean":
         b_loss = b_loss / total
         # b_l += (label_smoothing - 1) / total * logit_scale
         # b_l has already been divided by b_p_mask and total
@@ -233,12 +209,7 @@ def cross_entropy_kernel(
 
 
 @triton.jit
-def elementwise_mul_kernel(
-    x,
-    g,
-    N: tl.constexpr,
-    B: tl.constexpr
-):
+def elementwise_mul_kernel(x, g, N: tl.constexpr, B: tl.constexpr):
     """
     This function multiplies each element of the tensor pointed by x with the value pointed by g.
     The multiplication is performed in-place on the tensor pointed by x.
@@ -274,7 +245,7 @@ def fused_linear_cross_entropy_forward(
     label_smoothing: float = 0.0,
     logit_scale: float = 1.0,
     num_chunks: int = 8,
-    reduction: str = "mean"
+    reduction: str = "mean",
 ):
     device = x.device
     # inputs have shape: [N, H]
@@ -336,7 +307,7 @@ def fused_linear_cross_entropy_forward(
             reduction=reduction,
             V=V,
             BV=BV,
-            num_warps=32
+            num_warps=32,
         )
 
         # gradient of logits is computed in-place by the above triton kernel and is of shape: C x V
@@ -358,12 +329,7 @@ def fused_linear_cross_entropy_forward(
     return loss, dx, dw, db
 
 
-def fused_linear_cross_entropy_backward(
-    do: torch.Tensor,
-    dx: torch.Tensor,
-    dw: torch.Tensor,
-    db: torch.Tensor
-):
+def fused_linear_cross_entropy_backward(do: torch.Tensor, dx: torch.Tensor, dw: torch.Tensor, db: torch.Tensor):
     # If cross entropy is the last layer, do is 1.0. Skip the mul to save time
     if torch.ne(do, torch.tensor(1.0, device=do.device)):
         # We use a Triton kernel instead of a PyTorch operation because modifying inputs in-place
@@ -374,7 +340,7 @@ def fused_linear_cross_entropy_backward(
         elementwise_mul_kernel[(triton.cdiv(N * H, B),)](
             x=dx,
             g=do,
-            N=N*H,
+            N=N * H,
             B=B,
             num_warps=32,
         )
@@ -385,7 +351,7 @@ def fused_linear_cross_entropy_backward(
             elementwise_mul_kernel[(triton.cdiv(V * H, B),)](
                 x=dw,
                 g=do,
-                N=V*H,
+                N=V * H,
                 B=B,
                 num_warps=32,
             )
@@ -403,7 +369,6 @@ def fused_linear_cross_entropy_backward(
 
 
 class FusedLinearCrossEntropyFunction(torch.autograd.Function):
-
     @staticmethod
     def forward(
         ctx,
@@ -416,7 +381,7 @@ class FusedLinearCrossEntropyFunction(torch.autograd.Function):
         label_smoothing: float = 0.0,
         logit_scale: float = 1.0,
         num_chunks: int = 8,
-        reduction: str = "mean"
+        reduction: str = "mean",
     ):
         """
         Fusing the last linear layer with cross-entropy loss
@@ -435,7 +400,7 @@ class FusedLinearCrossEntropyFunction(torch.autograd.Function):
         bias (Optional[torch.Tensor]): [vocab_size]
             where `vocab_size` is the number of classes.
         p_mask(torch.Tensor): [batch_size * seq_len]
-            Its shape should be same as target. 
+            Its shape should be same as target.
         ignore_index:
             the index to ignore in the target.
         label_smoothing:
@@ -453,16 +418,7 @@ class FusedLinearCrossEntropyFunction(torch.autograd.Function):
             Default: 'mean'.
         """
         loss, dx, dw, db = fused_linear_cross_entropy_forward(
-            x,
-            target,
-            weight,
-            bias,
-            p_mask,
-            ignore_index,
-            label_smoothing,
-            logit_scale,
-            num_chunks,
-            reduction
+            x, target, weight, bias, p_mask, ignore_index, label_smoothing, logit_scale, num_chunks, reduction
         )
         # downcast to dtype and store for backward
         ctx.save_for_backward(
@@ -491,7 +447,7 @@ def fused_linear_cross_entropy_loss(
     label_smoothing: float = 0.0,
     logit_scale: float = 1.0,
     num_chunks: int = 8,
-    reduction: str = "mean"
+    reduction: str = "mean",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Args:
@@ -503,7 +459,7 @@ def fused_linear_cross_entropy_loss(
         bias (Optional[torch.Tensor]): [vocab_size]
             where `vocab_size` is the number of classes.
         p_mask(torch.Tensor): [batch_size * seq_len]
-            Its shape should be same as target. 
+            Its shape should be same as target.
         ignore_index: int.
             If target == ignore_index, the loss is set to 0.0.
         label_smoothing: float
@@ -522,28 +478,18 @@ def fused_linear_cross_entropy_loss(
         losses: [batch,], float
     """
     return FusedLinearCrossEntropyFunction.apply(
-        x,
-        target,
-        weight,
-        bias,
-        p_mask,
-        ignore_index,
-        label_smoothing,
-        logit_scale,
-        num_chunks,
-        reduction
+        x, target, weight, bias, p_mask, ignore_index, label_smoothing, logit_scale, num_chunks, reduction
     )
 
 
 class FusedLinearDiffusionCrossEntropyLoss(nn.Module):
-
     def __init__(
         self,
         ignore_index: int = -100,
         label_smoothing: float = 0.0,
         logit_scale: float = 1.0,
         num_chunks: int = 8,
-        reduction: str = "mean"
+        reduction: str = "mean",
     ):
         """
         Args:
@@ -579,7 +525,7 @@ class FusedLinearDiffusionCrossEntropyLoss(nn.Module):
         target: torch.LongTensor,
         weight: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
-        p_mask: torch.Tensor = None
+        p_mask: torch.Tensor = None,
     ):
         """
         Args:
@@ -591,11 +537,11 @@ class FusedLinearDiffusionCrossEntropyLoss(nn.Module):
             bias (Optional[torch.Tensor]): [vocab_size]
                 where `vocab_size` is the number of classes.
             p_mask(torch.Tensor): [batch_size, seq_len]
-                Its shape is same as target. 
+                Its shape is same as target.
                 Shape: (1, packed_length) when varlen attn is used.
         Returns:
             loss
-            
+
         TODO:
             follow https://github.com/ML-GSAI/LLaDA/blob/main/GUIDELINES.md#pre-training
             ```py
@@ -605,7 +551,7 @@ class FusedLinearDiffusionCrossEntropyLoss(nn.Module):
         """
         if p_mask is None:
             p_mask = torch.ones_like(target, dtype=torch.float, device=x.device)
-        
+
         x = x.contiguous().view(-1, x.shape[-1])
         target = target.contiguous().view(-1)
         weight = weight.contiguous()
@@ -613,7 +559,7 @@ class FusedLinearDiffusionCrossEntropyLoss(nn.Module):
         p_mask = p_mask.contiguous().view(-1)
         l, d = x.shape
         assert l == target.shape[0] == p_mask.shape[0], f"{x.shape=}, {target.shape=}, {p_mask.shape=}"
-            
+
         loss = fused_linear_cross_entropy_loss(
             x,
             target,
@@ -624,7 +570,7 @@ class FusedLinearDiffusionCrossEntropyLoss(nn.Module):
             label_smoothing=self.label_smoothing,
             logit_scale=self.logit_scale,
             num_chunks=self.num_chunks,
-            reduction=self.reduction
+            reduction=self.reduction,
         )
         return loss
 
@@ -678,5 +624,5 @@ class LinearLossParallel(ParallelStyle):
             device_mesh,
             partition_fn=None,
             input_fn=partial(self._prepare_input_fn, self.sequence_sharding),
-            output_fn=partial(self._prepare_output_fn, self.use_local_output)
+            output_fn=partial(self._prepare_output_fn, self.use_local_output),
         )

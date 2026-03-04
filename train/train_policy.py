@@ -1,41 +1,36 @@
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
+import contextlib
 import json
 import logging
 import math
 import shutil
 import time
-import contextlib
 from pathlib import Path
-from typing import Union
 
-import numpy as np
-from PIL import Image
-from omegaconf import OmegaConf
-import wandb
 import torch
-from torch.optim import AdamW
-
-from transformers import AutoTokenizer
+import torch.nn.functional as F
+import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import DistributedType, set_seed
-
-
+from accelerate.utils import set_seed
+from omegaconf import OmegaConf
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoTokenizer
 
 from models import SDARForCausalLM
-from train.prompting_utils import UniversalPrompting
+from models.logging import set_verbosity_error, set_verbosity_info
 from models.lr_schedulers import get_scheduler
-from models.logging import set_verbosity_info, set_verbosity_error
-
-from torch.utils.data import Dataset, DataLoader
-import torch.nn.functional as F
+from train.prompting_utils import UniversalPrompting
 
 SYSTEM_PROMPT_LEN = 28
 
-from train.utils import get_config, flatten_omega_conf, AverageMeter
+from train.utils import AverageMeter, flatten_omega_conf, get_config
 
 try:
     import apex
@@ -55,9 +50,11 @@ def log_gpu_memory(accelerator, message):
             reserved = torch.cuda.memory_reserved(i) / 1024**3
             max_allocated = torch.cuda.max_memory_allocated(i) / 1024**3
             total = torch.cuda.get_device_properties(i).total_memory / 1024**3
-            logger.info(f"[GPU {i}] {message}: "
-                      f"Allocated={allocated:.2f}GB, Reserved={reserved:.2f}GB, "
-                      f"Max={max_allocated:.2f}GB, Total={total:.2f}GB")
+            logger.info(
+                f"[GPU {i}] {message}: "
+                f"Allocated={allocated:.2f}GB, Reserved={reserved:.2f}GB, "
+                f"Max={max_allocated:.2f}GB, Total={total:.2f}GB"
+            )
 
 
 # ===== Torch Compile Cache Clear for Checkpoint Loading =====
@@ -74,34 +71,32 @@ def clear_torch_compile_cache(logger):
     """
     try:
         # Preferred: public API (PyTorch 2.5+)
-        if hasattr(torch, 'compiler') and hasattr(torch.compiler, 'reset'):
+        if hasattr(torch, "compiler") and hasattr(torch.compiler, "reset"):
             torch.compiler.reset()
             logger.info("Using torch.compiler.reset() to clear compilation cache")
         # Fallback: internal API
-        elif hasattr(torch, '_dynamo'):
+        elif hasattr(torch, "_dynamo"):
             torch._dynamo.reset()
             logger.info("Using torch._dynamo.reset() to clear compilation cache")
         else:
             logger.warning("No torch.compile cache clearing method available")
     except Exception as e:
         logger.warning(f"Failed to clear torch.compile cache: {e}")
+
+
 # ===== End Torch Compile Cache Clear =====
 
 
-
-
 class TrainDataset(Dataset):
-    def __init__(self, extended_input_ids, p_mask, tok_idx_ext, labels, adv,
-                 correctness=None, seq_ids=None, ref_logprobs=None):
+    def __init__(
+        self, extended_input_ids, p_mask, tok_idx_ext, labels, adv, correctness=None, seq_ids=None, ref_logprobs=None
+    ):
         self.extended_input_ids = extended_input_ids
         self.p_mask = p_mask
         self.tok_idx_ext = tok_idx_ext
         self.labels = labels
-        self.adv   = adv
-        self.logp_old_tok = torch.full(
-            (len(extended_input_ids), p_mask.shape[1]),
-            float('-inf')
-        )
+        self.adv = adv
+        self.logp_old_tok = torch.full((len(extended_input_ids), p_mask.shape[1]), float("-inf"))
         # Correctness for NLL loss (VAPO): map from row to original sequence correctness
         # correctness is (B,) bool tensor, seq_ids is (N,) mapping from row to seq
         if correctness is not None and seq_ids is not None:
@@ -153,7 +148,7 @@ def disable_gradient_checkpointing(model):
 
     # Save original state and disable
     for name, module in model.named_modules():
-        if hasattr(module, 'gradient_checkpointing'):
+        if hasattr(module, "gradient_checkpointing"):
             original_states[name] = module.gradient_checkpointing
             module.gradient_checkpointing = False
 
@@ -168,15 +163,7 @@ def disable_gradient_checkpointing(model):
 
 @torch.no_grad()
 def compute_model_logprobs(
-    model,
-    extended_input_ids,
-    p_mask,
-    tok_idx_ext,
-    labels,
-    start_pos,
-    batch_size,
-    accelerator,
-    model_name="model"
+    model, extended_input_ids, p_mask, tok_idx_ext, labels, start_pos, batch_size, accelerator, model_name="model"
 ):
     """
     General function: compute log probabilities of a model over all data.
@@ -198,12 +185,8 @@ def compute_model_logprobs(
     logger.info(f"Computing {model_name} logprobs...")
 
     # Create temporary dataset and dataloader
-    temp_dataset = torch.utils.data.TensorDataset(
-        extended_input_ids, p_mask, tok_idx_ext, labels
-    )
-    temp_loader = torch.utils.data.DataLoader(
-        temp_dataset, batch_size=batch_size, shuffle=False
-    )
+    temp_dataset = torch.utils.data.TensorDataset(extended_input_ids, p_mask, tok_idx_ext, labels)
+    temp_loader = torch.utils.data.DataLoader(temp_dataset, batch_size=batch_size, shuffle=False)
 
     # Set model to train mode (to support masked_indices), but use no_grad
     model.train()
@@ -222,8 +205,8 @@ def compute_model_logprobs(
 
         # Construct valid_indices
         valid_indices = torch.zeros(B, L, dtype=torch.long, device=device)
-        valid_indices[:, :start_pos] = 1   # prompt
-        valid_indices[:, start_pos:] = 2   # response
+        valid_indices[:, :start_pos] = 1  # prompt
+        valid_indices[:, start_pos:] = 2  # response
 
         # Construct position_ids
         position_ids = torch.arange(L, device=device).long().unsqueeze(0).expand(B, -1)
@@ -354,14 +337,16 @@ def main():
     #########################
     logger.info("Loading models and optimizer")
 
-
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model, trust_remote_code=True)
-    uni_prompting = UniversalPrompting(tokenizer, max_prompt_len=config.training.max_prompt_len,
-                                       max_gen_length=config.training.max_gen_length,
-                                       ignore_id=-100)
+    uni_prompting = UniversalPrompting(
+        tokenizer,
+        max_prompt_len=config.training.max_prompt_len,
+        max_gen_length=config.training.max_gen_length,
+        ignore_id=-100,
+    )
 
-    #from transformers import AutoModelForCausalLM
-    #model = AutoModelForCausalLM.from_pretrained(pretrained_model, trust_remote_code=True, torch_dtype="auto")
+    # from transformers import AutoModelForCausalLM
+    # model = AutoModelForCausalLM.from_pretrained(pretrained_model, trust_remote_code=True, torch_dtype="auto")
     model = SDARForCausalLM.from_pretrained(pretrained_model, trust_remote_code=True, torch_dtype="auto")
 
     # ===== Fix: clear torch.compile cache after loading checkpoint =====
@@ -369,7 +354,7 @@ def main():
     # Especially important for functions decorated with @torch.compile (e.g. fused_flex_attention)
     if config.experiment.current_epoch > 1:
         logger.info("=" * 80)
-        logger.info(f"Loaded model from checkpoint, clearing torch.compile cache")
+        logger.info("Loaded model from checkpoint, clearing torch.compile cache")
         logger.info("=" * 80)
         clear_torch_compile_cache(logger)
         logger.info("torch.compile cache cleared, will recompile with new weights")
@@ -390,6 +375,7 @@ def main():
             # First epoch: clone the training model as reference
             logger.info("First epoch: cloning training model as reference model")
             import copy
+
             ref_model = copy.deepcopy(model)
             ref_model.eval()
             for param in ref_model.parameters():
@@ -399,9 +385,7 @@ def main():
             # Subsequent epochs: load from SFT model path
             ref_model_path = config.model.pretrained_model
             logger.info(f"Loading reference model from {ref_model_path}")
-            ref_model = SDARForCausalLM.from_pretrained(
-                ref_model_path, trust_remote_code=True, torch_dtype="auto"
-            )
+            ref_model = SDARForCausalLM.from_pretrained(ref_model_path, trust_remote_code=True, torch_dtype="auto")
             if hasattr(ref_model, "config"):
                 ref_model.config.fuse_cross_entropy = False
             ref_model.eval()
@@ -444,13 +428,13 @@ def main():
     no_decay = ["bias", "layer_norm.weight", "mlm_ln.weight", "embeddings.weight"]
     optimizer_grouped_parameters = [
         {
-            "params": [p for n, p in model.named_parameters() if
-                       p.requires_grad and not any(nd in n for nd in no_decay)],
+            "params": [
+                p for n, p in model.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)
+            ],
             "weight_decay": optimizer_config.weight_decay,
         },
         {
-            "params": [p for n, p in model.named_parameters() if
-                       p.requires_grad and any(nd in n for nd in no_decay)],
+            "params": [p for n, p in model.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)],
             "weight_decay": 0.0,
         },
     ]
@@ -467,9 +451,6 @@ def main():
     else:
         raise ValueError(f"Optimizer {optimizer_type} not supported")
 
-
-
-
     def collapse_k_unique(lst, k: int):
         if k <= 0:
             raise ValueError("k must be > 0")
@@ -483,15 +464,11 @@ def main():
             rep = uniq[end_idx]
             mapping[val] = rep
         return [mapping[x] for x in lst]
-    
-    
-
 
     ##################################
     #         DATALOADER             #
     #################################
     logger.info("Creating dataloaders and lr_scheduler")
-
 
     def simple_collate(batch):
         idx, extended_input_ids, p_mask, tok_idx_ext, labels, adv, corr, ref_logp = zip(*batch)
@@ -504,39 +481,39 @@ def main():
             ref_logp_stacked = torch.stack(ref_logp_list)
 
         return {
-            "ids":        torch.tensor(idx),
-            "extended_input_ids":  torch.stack(extended_input_ids),
-            "p_mask":  torch.stack(p_mask),
-            "tok_idx_ext":  torch.stack(tok_idx_ext),
-            "labels":  torch.stack(labels),
-            "adv":    torch.stack(adv),
+            "ids": torch.tensor(idx),
+            "extended_input_ids": torch.stack(extended_input_ids),
+            "p_mask": torch.stack(p_mask),
+            "tok_idx_ext": torch.stack(tok_idx_ext),
+            "labels": torch.stack(labels),
+            "adv": torch.stack(adv),
             "correctness": torch.tensor(corr, dtype=torch.bool),
             "ref_logp": ref_logp_stacked,  # Add ref_logp to batch dict
         }
-    
 
-
-    dataset_load = torch.load(Path(project_name) / "temp_data" / f"{config.dataset.optimization_data}.pt", map_location="cpu")
+    dataset_load = torch.load(
+        Path(project_name) / "temp_data" / f"{config.dataset.optimization_data}.pt", map_location="cpu"
+    )
     extended_input_ids = dataset_load["extended_input_ids"]
-    p_mask            = dataset_load["p_mask"]
-    tok_idx_ext       = dataset_load["tok_idx_ext"]
-    labels            = dataset_load["labels"]
-    adv               = dataset_load["adv"]
-    per_seq_reward    = dataset_load.get("per_seq_reward", None)  # (B,) scalar reward for each original sequence
-    seq_ids           = dataset_load.get("seq_ids", None)         # (N,) mapping from row to original sequence
-    correctness_all   = dataset_load.get("correctness_all", None) # (B,) bool, correctness for NLL loss
+    p_mask = dataset_load["p_mask"]
+    tok_idx_ext = dataset_load["tok_idx_ext"]
+    labels = dataset_load["labels"]
+    adv = dataset_load["adv"]
+    per_seq_reward = dataset_load.get("per_seq_reward", None)  # (B,) scalar reward for each original sequence
+    seq_ids = dataset_load.get("seq_ids", None)  # (N,) mapping from row to original sequence
+    correctness_all = dataset_load.get("correctness_all", None)  # (B,) bool, correctness for NLL loss
     start_pos = dataset_load["meta"]["start_pos"]
-    drop_num  = dataset_load["meta"]["drop_num"]
-
+    drop_num = dataset_load["meta"]["drop_num"]
 
     _, L = p_mask.shape
-    L0    = start_pos
-    L1    = L - L0
+    L0 = start_pos
+    L1 = L - L0
     post_num = config.training.post_num
 
     # Use batch_size_policy if specified, otherwise fall back to batch_size_lm for compatibility
-    batch_size_policy = OmegaConf.select(config, "training.batch_size_policy",
-                                          default=OmegaConf.select(config, "training.batch_size_lm", default=8))
+    batch_size_policy = OmegaConf.select(
+        config, "training.batch_size_policy", default=OmegaConf.select(config, "training.batch_size_lm", default=8)
+    )
 
     #################################
     # Compute Reference Logprobs    #
@@ -550,7 +527,7 @@ def main():
         time_ref_start = time.time()
 
         # Move ref_model to GPU
-        logger.info(f"Moving reference model to GPU")
+        logger.info("Moving reference model to GPU")
         ref_model = ref_model.to(accelerator.device)
 
         # Compute ref logprobs
@@ -563,7 +540,7 @@ def main():
             start_pos=start_pos,
             batch_size=batch_size_policy,
             accelerator=accelerator,
-            model_name="reference"
+            model_name="reference",
         )
 
         time_ref = time.time() - time_ref_start
@@ -574,6 +551,7 @@ def main():
         ref_model = ref_model.cpu()
         torch.cuda.empty_cache()
         import gc
+
         gc.collect()
 
         accelerator.wait_for_everyone()
@@ -585,8 +563,16 @@ def main():
     # The model internally builds the BlockMask required for Block Diffusion
     # Reason: data length is L but function expects L0 + 2*L1, causing dimension mismatch
 
-    dataset_lm = TrainDataset(extended_input_ids, p_mask, tok_idx_ext, labels, adv,
-                              correctness=correctness_all, seq_ids=seq_ids, ref_logprobs=ref_logprobs)
+    dataset_lm = TrainDataset(
+        extended_input_ids,
+        p_mask,
+        tok_idx_ext,
+        labels,
+        adv,
+        correctness=correctness_all,
+        seq_ids=seq_ids,
+        ref_logprobs=ref_logprobs,
+    )
 
     total_batch_size_lm = batch_size_policy * accelerator.num_processes * config.training.gradient_accumulation_steps
     num_update_steps_per_epoch = math.ceil(len(dataset_lm) / total_batch_size_lm)
@@ -598,18 +584,13 @@ def main():
         optimizer=optimizer,
         num_training_steps=max_train_steps,
         num_warmup_steps=config.lr_scheduler.params.warmup_steps,
-        min_lr_scale=config.lr_scheduler.params.min_lr_scale
+        min_lr_scale=config.lr_scheduler.params.min_lr_scale,
     )
 
     train_dataloader_lm = DataLoader(
-        dataset_lm,
-        batch_size=batch_size_policy,
-        sampler=None,
-        collate_fn=simple_collate,
-        num_workers=0
+        dataset_lm, batch_size=batch_size_policy, sampler=None, collate_fn=simple_collate, num_workers=0
     )
 
-    
     ##################################
     #       Prepare accelerator     #
     #################################
@@ -619,33 +600,27 @@ def main():
     )
     # Ensure SDARForCausalLM model is in training mode
     # DeepSpeed direct assignment requires explicitly setting training state of inner modules
-    getattr(model, 'module', model).train()
+    getattr(model, "module", model).train()
     import torch.nn.functional as F
 
     @torch.no_grad()
-    def compute_logp_old_tok_parallel(
-            accelerator,
-            dataset,
-            train_dataloader_lm,
-            start_pos, pad_id,
-            batch_size):
-
+    def compute_logp_old_tok_parallel(accelerator, dataset, train_dataloader_lm, start_pos, pad_id, batch_size):
         # Training mode ensures the training branch is taken, returning logits with the correct shape
         # DeepSpeed direct assignment requires explicitly setting training state of inner modules
-        getattr(model, 'module', model).train()
+        getattr(model, "module", model).train()
 
         dl = train_dataloader_lm
 
         for batch in dl:
-            ids        = batch["ids"]                       # (b,)
+            ids = batch["ids"]  # (b,)
             extended_input_ids = batch["extended_input_ids"].to(accelerator.device)
             p_mask = batch["p_mask"].to(accelerator.device)
             tok_idx_ext = batch["tok_idx_ext"].to(accelerator.device)
             labels = batch["labels"].to(accelerator.device)
 
             B, L = p_mask.shape
-            L0    = start_pos
-            L1    = L - L0
+            L0 = start_pos
+            L1 = L - L0
             device = extended_input_ids.device
 
             # Removed basic_block_attention and process_pad; use attention_mask=None
@@ -659,11 +634,11 @@ def main():
             with disable_gradient_checkpointing(model):
                 logits = model(
                     input_ids=extended_input_ids,
-                    attention_mask=None,             # ← removed basic_block_attention
+                    attention_mask=None,  # ← removed basic_block_attention
                     position_ids=position_ids,
-                    labels=labels,                    # ← added labels parameter to ensure correct prompt_mask computation
-                    masked_indices=p_mask,             # use p_mask as masked_indices
-                    return_logits=True,                # return logits for logp computation
+                    labels=labels,  # ← added labels parameter to ensure correct prompt_mask computation
+                    masked_indices=p_mask,  # use p_mask as masked_indices
+                    return_logits=True,  # return logits for logp computation
                 ).logits  # (M, V), M = sum(p_mask)
 
             # logits are already in masked shape, compute log_softmax directly
@@ -684,7 +659,6 @@ def main():
 
         model.train()
 
-
     #################################
     #             Inference         #
     #################################
@@ -699,12 +673,11 @@ def main():
         batch_size=batch_size_policy,
     )
 
-
     #################################
     #             Training          #
     #################################
     logger.info("***** Running training *****")
-    
+
     logger.info(f"  Num response = {len(dataset_load)}")
     logger.info(f"  Num sample dropped = {drop_num}")
     logger.info(f"  Num training data = {p_mask.shape[0]}")
@@ -717,16 +690,12 @@ def main():
     data_time_m = AverageMeter()
     end = time.time()
 
-    
-
-
-
-
-    def forward_process(extended_input_ids, p_mask, tok_idx_ext, labels, adv, logp_old_tok, correctness=None, logp_ref_tok=None):
-
+    def forward_process(
+        extended_input_ids, p_mask, tok_idx_ext, labels, adv, logp_old_tok, correctness=None, logp_ref_tok=None
+    ):
         B, L = p_mask.shape
-        L0    = start_pos
-        L1    = L - L0
+        L0 = start_pos
+        L1 = L - L0
         device = extended_input_ids.device
 
         # Removed basic_block_attention and process_pad; use attention_mask=None
@@ -734,7 +703,7 @@ def main():
         # Fix: use labels and start_pos to build valid_indices for correct padding identification
         # valid_indices: 1=prompt, 2=response, 0=padding
         valid_indices = torch.zeros(B, L, dtype=torch.long, device=device)
-        valid_indices[:, :start_pos] = 1   # Set prompt portion to 1
+        valid_indices[:, :start_pos] = 1  # Set prompt portion to 1
         valid_indices[:, start_pos:] = 2  # Set response portion to 2
         # Padding portion stays 0 (initialized as 0)
 
@@ -766,27 +735,27 @@ def main():
 
         # Ensure inner SDARForCausalLM model is in training mode
         # DeepSpeed direct assignment requires explicitly setting training state of inner modules
-        getattr(model, 'module', model).train()
+        getattr(model, "module", model).train()
 
         # Call the model's compute_rl_loss branch
         # Note: the model automatically handles Block Diffusion expansion (input_ids -> concat_inputs_ids)
         outputs = model(
             input_ids=extended_input_ids,
-            attention_mask=None,                # ← model internally builds BlockMask
+            attention_mask=None,  # ← model internally builds BlockMask
             position_ids=position_ids,
             labels=labels,
-            masked_indices=p_mask,              # ← p_mask as masked_indices
-            compute_rl_loss=True,               # ← use RL loss branch
-            rl_p_mask=p_mask,                   # ← p_mask as rl_p_mask
+            masked_indices=p_mask,  # ← p_mask as masked_indices
+            compute_rl_loss=True,  # ← use RL loss branch
+            rl_p_mask=p_mask,  # ← p_mask as rl_p_mask
             rl_adv=adv,
-            rl_is_real=is_real,              # ← mark real samples
+            rl_is_real=is_real,  # ← mark real samples
             rl_logp_old_tok=logp_old_tok,
-            rl_logp_ref_tok=logp_ref_tok,       # ← Add this line
+            rl_logp_ref_tok=logp_ref_tok,  # ← Add this line
             rl_ppo_eps=eps,
             rl_ppo_eps_high=eps_high,
             rl_correctness=correctness if correctness is not None else None,
             rl_nll_weight=nll_weight,
-            rl_kl_beta=kl_beta,                # ← KL penalty coefficient
+            rl_kl_beta=kl_beta,  # ← KL penalty coefficient
             rl_kl_estimator=kl_estimator,  # ← KL estimator type ("k1", "k2", "k3")
             rl_return_entropy=True,
             loss_mean=False,
@@ -799,10 +768,10 @@ def main():
         # Extract return values
         # outputs.loss = policy_loss + kl_loss + nll_loss (total loss)
         total_loss = outputs.loss
-        kl_loss = outputs.kl_loss if hasattr(outputs, 'kl_loss') else torch.tensor(0.0, device=device)
-        nll_loss = outputs.nll_loss if hasattr(outputs, 'nll_loss') else torch.tensor(0.0, device=device)
-        ratio_mean = outputs.ratio_mean if hasattr(outputs, 'ratio_mean') else torch.tensor(0.0, device=device)
-        clip_frac = outputs.clip_frac if hasattr(outputs, 'clip_frac') else torch.tensor(0.0, device=device)
+        kl_loss = outputs.kl_loss if hasattr(outputs, "kl_loss") else torch.tensor(0.0, device=device)
+        nll_loss = outputs.nll_loss if hasattr(outputs, "nll_loss") else torch.tensor(0.0, device=device)
+        ratio_mean = outputs.ratio_mean if hasattr(outputs, "ratio_mean") else torch.tensor(0.0, device=device)
+        clip_frac = outputs.clip_frac if hasattr(outputs, "clip_frac") else torch.tensor(0.0, device=device)
 
         # Separate pure policy_loss from total_loss
         policy_loss = total_loss - kl_loss - nll_loss
@@ -820,13 +789,8 @@ def main():
             "ratio_mean": ratio_mean_val,
             "clip_frac": clip_frac_val,
             "kl_mean": kl_mean,
-            "entropy": outputs.entropy.item() if hasattr(outputs, 'entropy') else 0.0,
+            "entropy": outputs.entropy.item() if hasattr(outputs, "entropy") else 0.0,
         }
-
-
-
-
-
 
     from tqdm.auto import tqdm
 
@@ -852,7 +816,7 @@ def main():
                     "total_batch_size": total_batch_size_lm,
                     "eps": config.training.eps,
                     "learning_rate": config.optimizer.params.policy_learning_rate,
-                }
+                },
             }
             metrics_fp.write(json.dumps(config_header) + "\n")
             metrics_fp.flush()
@@ -882,20 +846,17 @@ def main():
     total_batches = len(train_dataloader_lm)
 
     for epoch in range(first_epoch, num_train_epochs):
-
         model.train()
 
         progress_bar = tqdm(
             train_dataloader_lm,
-            desc=f"Epoch {epoch+1}/{num_train_epochs}",
+            desc=f"Epoch {epoch + 1}/{num_train_epochs}",
             disable=not accelerator.is_local_main_process,
             dynamic_ncols=True,
-            leave=True
+            leave=True,
         )
-        
 
         for step, batch in enumerate(progress_bar, start=1):
-            
             # for loss calculation
 
             data_time_m.update(time.time() - end)
@@ -907,7 +868,9 @@ def main():
             adv = batch["adv"].to(accelerator.device)
             old_lp = dataset_lm.logp_old_tok[batch["ids"].cpu()].to(accelerator.device)
             correctness = batch["correctness"].to(accelerator.device)
-            ref_lp = batch["ref_logp"].to(accelerator.device) if batch["ref_logp"] is not None else None  # Add this line
+            ref_lp = (
+                batch["ref_logp"].to(accelerator.device) if batch["ref_logp"] is not None else None
+            )  # Add this line
 
             if torch.isneginf(old_lp).any().item():
                 print(old_lp)
@@ -922,12 +885,16 @@ def main():
                 # Calculate acc_reward and speed_reward
                 # If correct: total_reward = 1.0 + normalized_tpf, so acc_reward = 1.0, speed_reward = total_reward - 1.0
                 # If wrong: total_reward = -1.0 + normalized_tpf, so acc_reward = -1.0, speed_reward = total_reward + 1.0
-                batch_acc_rewards = torch.where(batch_correctness, torch.ones_like(batch_total_rewards), -torch.ones_like(batch_total_rewards))
-                batch_speed_rewards = torch.where(batch_correctness, batch_total_rewards - 1.0, batch_total_rewards + 1.0)
+                batch_acc_rewards = torch.where(
+                    batch_correctness, torch.ones_like(batch_total_rewards), -torch.ones_like(batch_total_rewards)
+                )
+                batch_speed_rewards = torch.where(
+                    batch_correctness, batch_total_rewards - 1.0, batch_total_rewards + 1.0
+                )
 
                 # Accumulate total_reward (for mean/std calculation)
                 acc_total_reward_sum += batch_total_rewards.sum().item()
-                acc_total_reward_sq_sum += (batch_total_rewards ** 2).sum().item()
+                acc_total_reward_sq_sum += (batch_total_rewards**2).sum().item()
                 acc_total_reward_count += batch_total_rewards.numel()
 
                 # Accumulate acc_reward and speed_reward (for mean calculation)
@@ -936,19 +903,19 @@ def main():
 
                 # Keep old reward accumulation for backward compatibility
                 acc_reward_sum += batch_total_rewards.sum().item()
-                acc_reward_sq_sum += (batch_total_rewards ** 2).sum().item()
+                acc_reward_sq_sum += (batch_total_rewards**2).sum().item()
                 acc_reward_count += batch_total_rewards.numel()
 
             result = forward_process(
-                    extended_input_ids=extended_input_ids,
-                    p_mask=p_mask,
-                    tok_idx_ext=tok_idx_ext,
-                    labels=labels,
-                    adv=adv,
-                    logp_old_tok=old_lp,
-                    correctness=correctness,
-                    logp_ref_tok=ref_lp  # Add this line
-                )
+                extended_input_ids=extended_input_ids,
+                p_mask=p_mask,
+                tok_idx_ext=tok_idx_ext,
+                labels=labels,
+                adv=adv,
+                logp_old_tok=old_lp,
+                correctness=correctness,
+                logp_ref_tok=ref_lp,  # Add this line
+            )
 
             # Use total_loss returned by model (already per-token averaged, no extra normalization needed)
             # Formula: L = (1 / sum_tokens) * sum(surrogate_p)
@@ -974,7 +941,7 @@ def main():
             torch.cuda.empty_cache()
 
             # Fix: force update after last batch
-            is_last_batch = (step == total_batches)
+            is_last_batch = step == total_batches
             should_update = ((step + 1) % accelerator.gradient_accumulation_steps == 0) or is_last_batch
 
             if should_update:
@@ -997,12 +964,16 @@ def main():
                 avg_clip_frac = acc_clip_frac / n_acc
                 avg_kl = acc_kl / n_acc
                 avg_entropy = acc_entropy / n_acc
-                grad_norm_value = grad_norm.item() if isinstance(grad_norm, torch.Tensor) else (grad_norm if grad_norm is not None else 0.0)
+                grad_norm_value = (
+                    grad_norm.item()
+                    if isinstance(grad_norm, torch.Tensor)
+                    else (grad_norm if grad_norm is not None else 0.0)
+                )
 
                 # Compute reward mean and std
                 if acc_reward_count > 0:
                     reward_mean = acc_reward_sum / acc_reward_count
-                    reward_var = (acc_reward_sq_sum / acc_reward_count) - (reward_mean ** 2)
+                    reward_var = (acc_reward_sq_sum / acc_reward_count) - (reward_mean**2)
                     reward_std = math.sqrt(max(reward_var, 0))
                 else:
                     reward_mean = 0.0
@@ -1011,7 +982,7 @@ def main():
                 # Compute new reward metrics (total_reward, acc_reward, speed_reward)
                 if acc_total_reward_count > 0:
                     avg_total_reward = acc_total_reward_sum / acc_total_reward_count
-                    total_reward_var = (acc_total_reward_sq_sum / acc_total_reward_count) - (avg_total_reward ** 2)
+                    total_reward_var = (acc_total_reward_sq_sum / acc_total_reward_count) - (avg_total_reward**2)
                     total_reward_std = math.sqrt(max(total_reward_var, 0))
                     avg_acc_reward = acc_acc_reward_sum / acc_total_reward_count
                     avg_speed_reward = acc_speed_reward_sum / acc_total_reward_count
@@ -1048,12 +1019,12 @@ def main():
                             "correct_ratio": correct_ratio,
                             "grad_norm": grad_norm_value,
                             "kl": avg_kl,
-                            "lr": current_lr
-                        }
+                            "lr": current_lr,
+                        },
                     }
                     metrics_fp.write(json.dumps(step_data) + "\n")
                     metrics_fp.flush()
-                
+
                 # Reset accumulators
                 acc_policy_loss = 0.0
                 acc_nll_loss = 0.0
@@ -1073,11 +1044,6 @@ def main():
                 acc_speed_reward_sum = 0.0
 
                 torch.cuda.empty_cache()
-            
-
-
-
-
 
     # Clean up training loop variables, free GPU memory
     logger.info(f"[Rank {accelerator.process_index}] Cleaning up after training loop")
@@ -1088,6 +1054,7 @@ def main():
     torch.cuda.empty_cache()
     torch.cuda.synchronize()
     import gc
+
     gc.collect()
 
     # Record GPU memory after training loop
@@ -1108,11 +1075,7 @@ def main():
     if accelerator.is_main_process and metrics_fp is not None:
         summary = {
             "type": "summary",
-            "data": {
-                "total_global_steps": global_step,
-                "total_epochs": num_train_epochs,
-                "training_completed": True
-            }
+            "data": {"total_global_steps": global_step, "total_epochs": num_train_epochs, "training_completed": True},
         }
         metrics_fp.write(json.dumps(summary) + "\n")
         metrics_fp.close()
@@ -1125,19 +1088,21 @@ def main():
 
     # Free GPU memory before NCCL cleanup to avoid OOM during destroy_process_group
     import gc
+
     gc.collect()
     torch.cuda.empty_cache()
-    
+
     accelerator.end_training()
 
 
-
-
-
-
 def save_checkpoint(model, tokenizer, config, accelerator, name):
+    import glob
+    import importlib
+    import inspect
+    import json
+    import os
+    import time
     from pathlib import Path
-    import time, json, shutil, os, glob, importlib, inspect
 
     output_dir = Path(config.experiment.project)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1210,21 +1175,6 @@ def save_checkpoint(model, tokenizer, config, accelerator, name):
             json.dump(metadata, f, indent=2)
 
         logger.info(f"Saved model + tokenizer to {save_dir}")
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":

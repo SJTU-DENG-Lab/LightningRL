@@ -6,22 +6,23 @@ Loads rollout data from JSON, processes it, and saves as PT file for policy trai
 Directly uses per-sequence rewards as advantage.
 """
 
+import json
 import os
 import sys
-import json
 import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 import logging
-import torch
-import numpy as np
 from pathlib import Path
-from termcolor import cprint
+
+import torch
 from omegaconf import OmegaConf
-from train.utils import get_config
 from transformers import AutoTokenizer
+
 from train.prompting_utils import UniversalPrompting
+from train.utils import get_config
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -32,11 +33,21 @@ logger = logging.getLogger(__name__)
 
 
 def compute_advantages_no_value(
-    Return_mat, adv_mat, per_seq_reward, seq_ids, p_mask, L0,
-    project_name, current_epoch, input_ids_lm=None, eos_id=None, L1=None,
+    Return_mat,
+    adv_mat,
+    per_seq_reward,
+    seq_ids,
+    p_mask,
+    L0,
+    project_name,
+    current_epoch,
+    input_ids_lm=None,
+    eos_id=None,
+    L1=None,
     num_responses_per_task=None,
-    sample_idx_all=None, resp_idx_all=None,
-    adv_norm_mode="batch"  # advantage normalization mode: "batch", "prompt_group", "prompt_group_center"
+    sample_idx_all=None,
+    resp_idx_all=None,
+    adv_norm_mode="batch",  # advantage normalization mode: "batch", "prompt_group", "prompt_group_center"
 ):
     """
     Advantage computation when no value model is used.
@@ -150,7 +161,9 @@ def compute_advantages_no_value(
         else:
             # Fall back to fixed-size grouping (backward compatible, but not recommended for filtered data)
             num_prompts = B // num_responses_per_task
-            logger.warning(f"[No Value Model] sample_idx not available, using fixed-size grouping: {num_prompts} prompts, {num_responses_per_task} responses per prompt")
+            logger.warning(
+                f"[No Value Model] sample_idx not available, using fixed-size grouping: {num_prompts} prompts, {num_responses_per_task} responses per prompt"
+            )
 
             for prompt_idx in range(num_prompts):
                 start_seq = prompt_idx * num_responses_per_task
@@ -208,7 +221,9 @@ def compute_advantages_no_value(
         else:
             # Fall back to fixed-size grouping
             num_prompts = B // num_responses_per_task
-            logger.warning(f"[No Value Model] sample_idx not available, using fixed-size grouping: {num_prompts} prompts")
+            logger.warning(
+                f"[No Value Model] sample_idx not available, using fixed-size grouping: {num_prompts} prompts"
+            )
 
             for prompt_idx in range(num_prompts):
                 start_seq = prompt_idx * num_responses_per_task
@@ -228,7 +243,9 @@ def compute_advantages_no_value(
                     Return_mat[s][pm_resp] = seq_reward
 
     else:
-        raise ValueError(f"Invalid adv_norm_mode: {adv_norm_mode}. Must be 'batch', 'prompt_group', or 'prompt_group_center'")
+        raise ValueError(
+            f"Invalid adv_norm_mode: {adv_norm_mode}. Must be 'batch', 'prompt_group', or 'prompt_group_center'"
+        )
 
     # Statistics
     num_nonzero_adv = (adv_mat != 0).sum().item()
@@ -263,7 +280,9 @@ def compute_advantages_no_value(
 
     logger.info(f"[No Value Model] Filled {num_nonzero_adv} advantage values")
     logger.info(f"[No Value Model] Advantage statistics: mean={mean_adv:.4f}, std={std_adv:.4f}")
-    logger.info(f"[No Value Model] Collapse Ratios: 0.01={collapse_ratios[0.01]:.4f}, 0.05={collapse_ratios[0.05]:.4f}, 0.1={collapse_ratios[0.1]:.4f}, 0.5={collapse_ratios[0.5]:.4f}")
+    logger.info(
+        f"[No Value Model] Collapse Ratios: 0.01={collapse_ratios[0.01]:.4f}, 0.05={collapse_ratios[0.05]:.4f}, 0.1={collapse_ratios[0.1]:.4f}, 0.5={collapse_ratios[0.5]:.4f}"
+    )
 
     # Save statistics to file
     stats_file = Path(project_name) / "temp_data" / f"advantage_stats_epoch_{current_epoch}.txt"
@@ -279,7 +298,9 @@ def compute_advantages_no_value(
         f.write(f"Num nonzero advantages: {num_nonzero_adv}\n")
         f.write(f"Mean advantage: {mean_adv:.4f}\n")
         f.write(f"Std advantage: {std_adv:.4f}\n")
-        f.write(f"Collapse Ratios: 0.01={collapse_ratios[0.01]:.4f}, 0.05={collapse_ratios[0.05]:.4f}, 0.1={collapse_ratios[0.1]:.4f}, 0.5={collapse_ratios[0.5]:.4f}\n")
+        f.write(
+            f"Collapse Ratios: 0.01={collapse_ratios[0.01]:.4f}, 0.05={collapse_ratios[0.05]:.4f}, 0.1={collapse_ratios[0.1]:.4f}, 0.5={collapse_ratios[0.5]:.4f}\n"
+        )
 
 
 def main():
@@ -290,9 +311,9 @@ def main():
     project_name = config.experiment.project
     current_epoch = config.experiment.current_epoch
 
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info(f"[No Value Model] Starting data processing for epoch {current_epoch}")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
     # 1. Load tokenizer
     if current_epoch <= 1:
@@ -322,7 +343,7 @@ def main():
         raise FileNotFoundError(f"JSON data file not found: {json_path}")
 
     logger.info(f"[No Value Model] Loading JSON data from {json_path}")
-    with open(json_path, 'r', encoding='utf-8') as f:
+    with open(json_path, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
     # 3. Extract data fields
@@ -338,17 +359,15 @@ def main():
     logger.info(f"[No Value Model] Loaded {len(json_data)} samples from JSON")
 
     # 4. Call UniversalPrompting to process data
-    logger.info(f"[No Value Model] Processing prompts with UniversalPrompting")
+    logger.info("[No Value Model] Processing prompts with UniversalPrompting")
     uni_prompting = UniversalPrompting(
         tokenizer,
         max_prompt_len=config.training.max_prompt_len,
         max_gen_length=config.training.max_gen_length,
-        ignore_id=-100
+        ignore_id=-100,
     )
 
-    input_ids_lm, _, start_pos, drop_num, keep_indices = uni_prompting(
-        (prompt_list, response_list)
-    )
+    input_ids_lm, _, start_pos, drop_num, keep_indices = uni_prompting((prompt_list, response_list))
     start_pos = int(start_pos)
 
     logger.info(f"[No Value Model] After uni_prompting: {input_ids_lm.shape[0]} samples, dropped {drop_num}")
@@ -411,7 +430,7 @@ def main():
     p_mask[:, :L0] = False
 
     # Response portion: True for non-padding positions
-    resp_ids = input_ids_lm[:, L0:L0+L1]  # (B, L1)
+    resp_ids = input_ids_lm[:, L0 : L0 + L1]  # (B, L1)
     is_pad = resp_ids.eq(pad_id)
 
     # Handle EOS tokens: exclude tokens after the first EOS
@@ -426,7 +445,7 @@ def main():
             if is_eos[b].any():
                 first_eos_pos = eos_pos[b].item()
                 # Tokens after EOS should not participate in training
-                eos_after_mask[b, first_eos_pos+1:] = True
+                eos_after_mask[b, first_eos_pos + 1 :] = True
     else:
         eos_after_mask = torch.zeros_like(is_pad, dtype=torch.bool)
 
@@ -437,7 +456,7 @@ def main():
         cum_pad = torch.cumsum(is_pad.int(), dim=1)
         resp_trainable = (~is_pad & ~eos_after_mask) | (is_pad & (cum_pad <= post_num) & ~eos_after_mask)
 
-    p_mask[:, L0:L0+L1] = resp_trainable
+    p_mask[:, L0 : L0 + L1] = resp_trainable
 
     # tok_idx_ext: token index at each position
     tok_idx_ext = torch.arange(L, device=device).unsqueeze(0).expand(B, L)  # (B, L)
@@ -449,7 +468,7 @@ def main():
     # Assign directly to response portion to avoid dimension issues
     # Create mask for response portion, then apply
     resp_mask = ~is_pad  # (B, L1) True for non-padding positions
-    labels[:, L0:L0+L1] = torch.where(resp_mask, input_ids_lm[:, L0:L0+L1], torch.tensor(-100, device=device))
+    labels[:, L0 : L0 + L1] = torch.where(resp_mask, input_ids_lm[:, L0 : L0 + L1], torch.tensor(-100, device=device))
 
     # seq_ids: one row per sequence
     seq_ids = torch.arange(B, dtype=torch.long, device=device)  # (B,)
@@ -462,11 +481,20 @@ def main():
     adv_norm_mode = OmegaConf.select(config, "reward.adv_norm_mode", default="batch")
 
     compute_advantages_no_value(
-        Return_mat, adv_mat, per_seq_reward, seq_ids, p_mask, L0,
-        project_name, current_epoch, input_ids_lm, eos_id, L1,
+        Return_mat,
+        adv_mat,
+        per_seq_reward,
+        seq_ids,
+        p_mask,
+        L0,
+        project_name,
+        current_epoch,
+        input_ids_lm,
+        eos_id,
+        L1,
         sample_idx_all=sample_idx_all,  # For correct grouping
-        resp_idx_all=resp_idx_all,      # For correct grouping
-        adv_norm_mode=adv_norm_mode     # Advantage normalization mode
+        resp_idx_all=resp_idx_all,  # For correct grouping
+        adv_norm_mode=adv_norm_mode,  # Advantage normalization mode
     )
 
     # 9. Save as PT file for policy training
@@ -495,15 +523,15 @@ def main():
             "time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "start_pos": L0,
             "drop_num": drop_num,
-        }
+        },
     }
 
     torch.save(output_data, output_path)
     logger.info(f"[No Value Model] Saved data to {output_path}")
 
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info(f"[No Value Model] Data processing completed for epoch {current_epoch}")
-    logger.info("="*80)
+    logger.info("=" * 80)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 import math
 import random
+from typing import Any, List, Tuple
+
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, ListConfig, OmegaConf
-from typing import Any, List, Tuple, Union
 
 
 ##################################################
@@ -83,7 +84,7 @@ def mask_or_random_replace_tokens(image_tokens, mask_id, config, mask_schedule, 
         if torch.cuda.is_available():
             cuda_rng_state = torch.cuda.get_rng_state()
         python_rng_state = random.getstate()
-        
+
         # Set fixed seed
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -115,7 +116,7 @@ def mask_or_random_replace_tokens(image_tokens, mask_id, config, mask_schedule, 
         batch_randperm = torch.rand(batch_size, seq_len, device=image_tokens.device).argsort(dim=-1)
         mask = batch_randperm < num_token_masked.unsqueeze(-1)
     else:
-        resolution = int(seq_len ** 0.5)
+        resolution = int(seq_len**0.5)
         mask = torch.zeros((batch_size, resolution, resolution), device=image_tokens.device)
 
         # TODO - would be nice to vectorize
@@ -135,9 +136,9 @@ def mask_or_random_replace_tokens(image_tokens, mask_id, config, mask_schedule, 
             start_idx_width = random.randint(0, resolution - num_token_masked_width)
 
             mask[
-            batch_idx,
-            start_idx_height: start_idx_height + num_token_masked_height,
-            start_idx_width: start_idx_width + num_token_masked_width,
+                batch_idx,
+                start_idx_height : start_idx_height + num_token_masked_height,
+                start_idx_width : start_idx_width + num_token_masked_width,
             ] = 1
 
         mask = mask.reshape(batch_size, seq_len)
@@ -156,8 +157,8 @@ def mask_or_random_replace_tokens(image_tokens, mask_id, config, mask_schedule, 
         raise ValueError(f"noise_type {config.training.noise_type} not supported")
 
     if (
-            config.training.get("predict_all_tokens", False)
-            or config.training.get("noise_type", "mask") == "random_replace"
+        config.training.get("predict_all_tokens", False)
+        or config.training.get("noise_type", "mask") == "random_replace"
     ):
         labels = image_tokens
         loss_weight = get_loss_weight(mask_prob, mask.long())
@@ -196,7 +197,10 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
 from torchvision import transforms
+
+
 def image_transform(image, resolution=256, normalize=True):
     image = transforms.Resize(resolution, interpolation=transforms.InterpolationMode.BICUBIC)(image)
     image = transforms.CenterCrop((resolution, resolution))(image)
@@ -205,8 +209,9 @@ def image_transform(image, resolution=256, normalize=True):
         image = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)(image)
     return image
 
+
 def image_transform_squash(image, resolution=256, normalize=True):
-    image = transforms.Resize((resolution,resolution), interpolation=transforms.InterpolationMode.BICUBIC)(image)
+    image = transforms.Resize((resolution, resolution), interpolation=transforms.InterpolationMode.BICUBIC)(image)
     image = transforms.ToTensor()(image)
     if normalize:
         image = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)(image)

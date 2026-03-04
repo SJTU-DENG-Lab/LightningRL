@@ -106,7 +106,12 @@ def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_st
 
 
 def get_cosine_schedule_with_warmup(
-    optimizer: Optimizer, num_warmup_steps: int, num_training_steps: int, num_cycles: float = 0.5, last_epoch: int = -1, min_lr_scale: float = 0.0
+    optimizer: Optimizer,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    num_cycles: float = 0.5,
+    last_epoch: int = -1,
+    min_lr_scale: float = 0.0,
 ):
     """
     Create a schedule with a learning rate that decreases following the values of the cosine function between the
@@ -250,7 +255,7 @@ def get_scheduler(
     num_training_steps: Optional[int] = None,
     num_cycles: int = 1,
     power: float = 1.0,
-    min_lr_scale: float = 0.0
+    min_lr_scale: float = 0.0,
 ):
     """
     Unified API to get any scheduler from its name.
@@ -291,7 +296,11 @@ def get_scheduler(
 
     if name == SchedulerType.COSINE_WITH_RESTARTS:
         return schedule_func(
-            optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps, num_cycles=num_cycles, min_lr_scale=min_lr_scale
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps,
+            num_cycles=num_cycles,
+            min_lr_scale=min_lr_scale,
         )
 
     if name == SchedulerType.POLYNOMIAL:
@@ -301,7 +310,10 @@ def get_scheduler(
 
     if name == SchedulerType.COSINE:
         return schedule_func(
-            optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps, min_lr_scale=min_lr_scale
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps,
+            min_lr_scale=min_lr_scale,
         )
 
     return schedule_func(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)

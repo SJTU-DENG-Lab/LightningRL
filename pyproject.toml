@@ -173,17 +173,54 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["models", "reward", "train"]
+
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = ["pre-commit>=4.0.0,<5.0", "ruff>=0.7.0,<1.0", "isort>=5.13.0", "black>=24.0.0"]
 no-build-isolation-package = ["flash-attn"]
 
-[[tool.uv.index]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu124"
+[tool.ruff]
+target-version = "py312"
+line-length = 119
+indent-width = 4
+extend-exclude = ["sample/lmdeploy", ".venv", "MultiBD"]
+
+[tool.ruff.lint]
+# E402: 允许 import 不在文件顶部（ML 脚本常有 setup 代码在 import 前）
+# C901: 复杂度过高, E501: 行过长, E741: 歧义变量名, W605: 无效转义, C408: 不必要的 lambda
+ignore = ["C901", "E501", "E741", "W605", "C408", "E402", "C416", "F841", "F401", "E722", "E712"]
+select = ["C", "E", "F", "I", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "F403", "F811"]
+# try/except 中用于检测可用性的 import
+"models/sdar/modeling_sdar.py" = ["F401"]
+"train/init_value_model.py" = ["F401"]
+"train/train_policy.py" = ["F401"]
+"train/train_value.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["models", "reward", "train"]
+known-third-party = ["torch", "transformers", "wandb", "omegaconf"]
+
+[tool.isort]
+profile = "black"
+line_length = 119
+known_first_party = ["models", "reward", "train"]
+
+[tool.black]
+line-length = 119
+target-version = ["py312"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [tool.uv.sources]
-torch = { index = "pytorch" }
-torchvision = { index = "pytorch" }
 flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl" }
 
 [[tool.uv.dependency-metadata]]

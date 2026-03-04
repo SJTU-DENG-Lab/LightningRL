@@ -1,20 +1,17 @@
 import json
-import math_utils
-import nest_asyncio
-from scipy.stats import norm
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
+
+from omegaconf import OmegaConf
 from termcolor import cprint
-from omegaconf import MISSING
-from omegaconf import DictConfig, ListConfig, OmegaConf
+
+
 def get_config():
     cli_conf = OmegaConf.from_cli()
     yaml_conf = OmegaConf.load(cli_conf.config)
     conf = OmegaConf.merge(yaml_conf, cli_conf)
     return conf
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     config = get_config()
 
     project_name = config.experiment.project
@@ -23,23 +20,19 @@ if __name__ == "__main__":
         pretrained_model = config.model.pretrained_model
     else:
         pretrained_model = "../" + project_name + "/ckpt/" + config.model.optimized_name
-    
 
     if config.experiment.function == "train":
         shrink = config.training.shrink
         dataset = config.dataset.train_dataset
         outputs_name = "rl-" + pretrained_model.replace("/", ".") + "-" + dataset
-        
+
     elif config.experiment.function == "evaluation":
         dataset = config.evaluation.eval_dataset
         outputs_name = "eval-" + pretrained_model.replace("/", ".") + "-" + dataset
-    
-    
 
-    
     file_name = "../" + project_name + "/temp_data/outputs-" + outputs_name + ".json"
 
-    with open(file_name, 'r') as f:
+    with open(file_name, "r") as f:
         json_content = json.load(f)
 
     # Handle both old format (list) and new format (dict with metadata)
@@ -49,8 +42,6 @@ if __name__ == "__main__":
         # Old format compatibility
         data = json_content
 
-
-
     def z_score_normalize(lst):
         mean = sum(lst) / len(lst)
         std = (sum((x - mean) ** 2 for x in lst) / len(lst)) ** 0.5
@@ -58,18 +49,11 @@ if __name__ == "__main__":
             return [0 for x in lst]
         return [(x - mean) / std for x in lst]
 
-
-
-
-
-
     def set_last_t(lst: list, t: int) -> None:
         new_lst = lst.copy()
         new_val = max(lst) + 1
         new_lst[-t:] = [new_val] * t
         return new_lst
-
-
 
     # ===== Reward Configuration =====
     tpf_coefficient = OmegaConf.select(config, "reward.tpf_coefficient", default=0.1)
@@ -88,7 +72,7 @@ if __name__ == "__main__":
 
     response_length_list = []
     tpf_list = []  # Collect TPF statistics across all samples
-    num_task   = 0
+    num_task = 0
     num_correct_task = 0
     final_data = []
     for i in range(len(data)):
@@ -185,7 +169,6 @@ if __name__ == "__main__":
         if config.experiment.function == "evaluation":
             data[i]["step_map"] = []
 
-
     # Calculate Efficient Prompt Ratio (proportion of prompts where tpf max-min < 0.01)
     efficient_prompt_count = 0
     total_prompt_count = 0
@@ -209,18 +192,17 @@ if __name__ == "__main__":
 
     efficient_prompt_ratio = efficient_prompt_count / total_prompt_count if total_prompt_count > 0 else 0.0
 
-
     if config.experiment.function == "train":
-        with open("../" + project_name + "/temp_data/" + config.dataset.optimization_data + ".json", "w", encoding="utf-8") as f:
+        with open(
+            "../" + project_name + "/temp_data/" + config.dataset.optimization_data + ".json", "w", encoding="utf-8"
+        ) as f:
             json.dump(final_data, f, indent=2, ensure_ascii=False)
 
-
     import os
-    
+
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
     with open(file_name, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-
 
     outputs_result_name = "../" + project_name + "/results/results-" + outputs_name + ".txt"
     os.makedirs(os.path.dirname(outputs_result_name), exist_ok=True)
@@ -229,9 +211,9 @@ if __name__ == "__main__":
         def save_and_print(text):
             cprint("\n\n\n" + text, color="green")
             f.write(text + "\n")
-        
+
         acc = num_correct_task / num_task if num_task else 0
-        avg_len = sum(response_length_list)/len(response_length_list)
+        avg_len = sum(response_length_list) / len(response_length_list)
 
         # Calculate TPF statistics (only for non-zero TPF values)
         valid_tpf = [t for t in tpf_list if t > 0]
@@ -246,7 +228,13 @@ if __name__ == "__main__":
         output_text = f"train step: {config.experiment.current_epoch}  "
 
         if config.experiment.function == "train":
-            output_text = output_text + f"remasking_strategy: {config.rollout.remasking_strategy}  top_k: {config.rollout.top_k}  acc: {acc}  avg length: {avg_len}  {tpf_stats}  efficient_prompt_ratio: {efficient_prompt_ratio:.4f}"
+            output_text = (
+                output_text
+                + f"remasking_strategy: {config.rollout.remasking_strategy}  top_k: {config.rollout.top_k}  acc: {acc}  avg length: {avg_len}  {tpf_stats}  efficient_prompt_ratio: {efficient_prompt_ratio:.4f}"
+            )
         else:
-            output_text = output_text + f"remasking_strategy: {config.evaluation.remasking_strategy}  top_k: {config.evaluation.top_k}  acc: {acc}  avg length: {avg_len}  {tpf_stats}"
+            output_text = (
+                output_text
+                + f"remasking_strategy: {config.evaluation.remasking_strategy}  top_k: {config.evaluation.top_k}  acc: {acc}  avg length: {avg_len}  {tpf_stats}"
+            )
         save_and_print(output_text)

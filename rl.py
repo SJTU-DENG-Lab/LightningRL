@@ -1,22 +1,26 @@
-import os
-import sys
-import subprocess
-from pathlib import Path
-from termcolor import cprint
+import json
 import logging
+import os
+import subprocess
 import warnings
+from pathlib import Path
+
+from termcolor import cprint
 
 # Disable all logging output
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("torch._inductor").setLevel(logging.CRITICAL)
 warnings.filterwarnings("ignore", message=".*is part of.*")
 
-from omegaconf import DictConfig, ListConfig, OmegaConf
+from omegaconf import OmegaConf
+
+
 def get_config():
     cli_conf = OmegaConf.from_cli()
     yaml_conf = OmegaConf.load(cli_conf.config)
     conf = OmegaConf.merge(yaml_conf, cli_conf)
     return conf
+
 
 if __name__ == "__main__":
     config = get_config()
@@ -26,7 +30,9 @@ if __name__ == "__main__":
 
     # Set cache directory: user-defined env vars take priority
     # Fall back to default path if not user-defined
-    default_cache_base = "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/tmp"
+    default_cache_base = (
+        "/inspire/ssd/project/advanced-machine-learning-and-deep-learning-applications/yangyi-253108120173/ssd/hyz/tmp"
+    )
 
     # TRITON_CACHE_DIR: respect user setting if present, otherwise use default
     if "TRITON_CACHE_DIR" not in os.environ:
@@ -48,6 +54,7 @@ if __name__ == "__main__":
 
     # Record cache files before training; only delete newly created ones afterward (avoids interfering with concurrent jobs)
     import atexit
+
     cache_dirs = [os.environ["TRITON_CACHE_DIR"], os.environ["TORCHINDUCTOR_CACHE_DIR"]]
     cache_files_before = set()
     for cache_dir in cache_dirs:
@@ -78,7 +85,7 @@ if __name__ == "__main__":
     atexit.register(cleanup_new_cache)
 
     # Set GPU devices from config
-    if hasattr(config.experiment, 'gpu_ids') and config.experiment.gpu_ids:
+    if hasattr(config.experiment, "gpu_ids") and config.experiment.gpu_ids:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(config.experiment.gpu_ids)
         print(f"Setting CUDA_VISIBLE_DEVICES={config.experiment.gpu_ids}")
 
@@ -87,6 +94,7 @@ if __name__ == "__main__":
     model_base = config.model.model_base
 
     from omegaconf import MISSING
+
     # Read use_value_model flag from config
     use_value_model_config = OmegaConf.select(config, "training.use_value_model", default=True)
 
@@ -105,67 +113,83 @@ if __name__ == "__main__":
     def begin_with(file_name):
         with open(file_name, "w") as f:
             f.write("")
-    
+
     def init_value_model(i, model_base, cfg):
         project_name = cfg.experiment.project
         script_name = "init_value_model.py"
         subprocess.run(
-            f'python {script_name} '
-            f'config=../configs/{project_name}.yaml '
-            f'experiment.current_epoch={i} ',
+            f"python {script_name} config=../configs/{project_name}.yaml experiment.current_epoch={i} ",
             shell=True,
-            cwd='train',
+            cwd="train",
             check=True,
         )
-    
+
     if start_from_scratch:
         os.makedirs(f"{project_name}/results", exist_ok=True)
         optimized_model = "../" + project_name + "/ckpt/" + config.model.optimized_name
-        begin_with(f"{project_name}/results/results-rl-" + optimized_model.replace("/", ".") + "-" + config.dataset.train_dataset + ".txt")
-        begin_with(f"{project_name}/results/results-eval-" + optimized_model.replace("/", ".") + "-" + config.dataset.train_dataset + ".txt")
+        begin_with(
+            f"{project_name}/results/results-rl-"
+            + optimized_model.replace("/", ".")
+            + "-"
+            + config.dataset.train_dataset
+            + ".txt"
+        )
+        begin_with(
+            f"{project_name}/results/results-eval-"
+            + optimized_model.replace("/", ".")
+            + "-"
+            + config.dataset.train_dataset
+            + ".txt"
+        )
         # Reset cursor to 0 when starting from scratch
         cursor_file = Path(project_name) / "temp_data" / "data_cursor.txt"
         cursor_file.parent.mkdir(parents=True, exist_ok=True)
         cursor_file.write_text("0")
-        cprint(f"[Start from Scratch] Reset data cursor to 0", "cyan")
+        cprint("[Start from Scratch] Reset data cursor to 0", "cyan")
         if have_value_model:
             init_value_model(1, model_base, config)
             optimized_value_model = "../" + project_name + "/ckpt/" + config.model.optimized_value_name
-            begin_with(f"{project_name}/results/results-rl-" + optimized_value_model.replace("/", ".") + "-" + config.dataset.train_dataset + ".txt")
-    
-    def sample(i, type, block_size = None, top_k = None, remasking_strategy = None):
+            begin_with(
+                f"{project_name}/results/results-rl-"
+                + optimized_value_model.replace("/", ".")
+                + "-"
+                + config.dataset.train_dataset
+                + ".txt"
+            )
+
+    def sample(i, type, block_size=None, top_k=None, remasking_strategy=None):
         script_name = "rl_rollout.py"
         subprocess.run(
-            f'python {script_name} '
-            f'config=../configs/{project_name}.yaml '
+            f"python {script_name} "
+            f"config=../configs/{project_name}.yaml "
             f"experiment.function={type} "
             f"evaluation.block_size={block_size} "
             f"evaluation.top_k={top_k} "
             f"evaluation.remasking_strategy={remasking_strategy} "
-            f'experiment.current_epoch={i} ',
+            f"experiment.current_epoch={i} ",
             shell=True,
-            cwd='sample',
+            cwd="sample",
             check=True,
         )
-    
-    def reward(i, type, is_code_task, block_size = None, top_k = None, remasking_strategy = None):
+
+    def reward(i, type, is_code_task, block_size=None, top_k=None, remasking_strategy=None):
         if is_code_task:
             script_name = "rl_code_reward.py"
         else:
             script_name = "rl_reward.py"
         subprocess.run(
-            f'python {script_name} '
-            f'config=../configs/{project_name}.yaml '
+            f"python {script_name} "
+            f"config=../configs/{project_name}.yaml "
             f"experiment.function={type} "
             f"evaluation.block_size={block_size} "
             f"evaluation.top_k={top_k} "
             f"evaluation.remasking_strategy={remasking_strategy} "
-            f'experiment.current_epoch={i} ',
+            f"experiment.current_epoch={i} ",
             shell=True,
-            cwd='reward',
+            cwd="reward",
             check=True,
         )
-    
+
     def execute(i, type):
         subprocess.run(
             f"python rl_execute.py "
@@ -173,11 +197,10 @@ if __name__ == "__main__":
             f"experiment.function={type} "
             f"experiment.current_epoch={i} ",
             shell=True,
-            cwd='reward',
+            cwd="reward",
             check=True,
         )
-            
-    
+
     def train(i, target):
         if target == "policy":
             script_name = "train_policy.py"
@@ -187,29 +210,27 @@ if __name__ == "__main__":
             script_name = "train_policy_no_value.py"
             # policy_no_value does not require distributed execution; run as a single process
             subprocess.run(
-                f'python train/{script_name} '
-                f'config=configs/{project_name}.yaml '
-                f'experiment.current_epoch={i} ',
+                f"python train/{script_name} config=configs/{project_name}.yaml experiment.current_epoch={i} ",
                 shell=True,
                 check=True,
-                env=os.environ.copy()
+                env=os.environ.copy(),
             )
             return  # Early return
 
         run_subprocess(  # All other targets use accelerate distributed execution
-            f'accelerate launch '
-            f'--num_machines 1 '
-            f'--machine_rank 0 '
-            f'--main_process_ip 127.0.0.1 '
-            f'--main_process_port 8888 '
-            f'--config_file accelerate_configs/{config.experiment.deepspeed_file}.yaml '
-            f'train/{script_name} '
-            f'config=configs/{project_name}.yaml '
-            f'experiment.current_epoch={i} ',
+            f"accelerate launch "
+            f"--num_machines 1 "
+            f"--machine_rank 0 "
+            f"--main_process_ip 127.0.0.1 "
+            f"--main_process_port 8888 "
+            f"--config_file accelerate_configs/{config.experiment.deepspeed_file}.yaml "
+            f"train/{script_name} "
+            f"config=configs/{project_name}.yaml "
+            f"experiment.current_epoch={i} ",
             shell=True,
             check=True,
         )
-    
+
     if config.dataset.data_type == "code":
         is_code_task = True
     else:
@@ -290,7 +311,10 @@ if __name__ == "__main__":
 
         # Method A: Full passes-based pretraining (prioritized)
         elif value_pretrain_full_passes > 0:
-            cprint(f"[Value Pretrain] Starting value model pretraining for {value_pretrain_full_passes} full dataset passes...", "cyan")
+            cprint(
+                f"[Value Pretrain] Starting value model pretraining for {value_pretrain_full_passes} full dataset passes...",
+                "cyan",
+            )
 
             completed_pass_file = Path(project_name) / "temp_data" / "completed_pass.txt"
             cursor_file = Path(project_name) / "temp_data" / "data_cursor.txt"
@@ -315,7 +339,10 @@ if __name__ == "__main__":
 
             while completed_pass_count < value_pretrain_full_passes:
                 pretrain_epoch += 1
-                cprint(f"[Value Pretrain] Epoch {pretrain_epoch} (completed passes: {completed_pass_count}/{value_pretrain_full_passes})", "cyan")
+                cprint(
+                    f"[Value Pretrain] Epoch {pretrain_epoch} (completed passes: {completed_pass_count}/{value_pretrain_full_passes})",
+                    "cyan",
+                )
 
                 sample(0, "train")
                 if is_code_task:
@@ -327,10 +354,15 @@ if __name__ == "__main__":
                 # Check if completed a full pass
                 if completed_pass_file.exists():
                     completed_pass_count += 1
-                    cprint(f"[Value Pretrain] Completed pass {completed_pass_count}/{value_pretrain_full_passes}", "green")
+                    cprint(
+                        f"[Value Pretrain] Completed pass {completed_pass_count}/{value_pretrain_full_passes}", "green"
+                    )
                     completed_pass_file.unlink()
 
-            cprint(f"[Value Pretrain] Pretraining completed. Total epochs: {pretrain_epoch}, Total passes: {completed_pass_count}", "green")
+            cprint(
+                f"[Value Pretrain] Pretraining completed. Total epochs: {pretrain_epoch}, Total passes: {completed_pass_count}",
+                "green",
+            )
 
             # Reset cursor to 0 and clear flags for main training
             cursor_file.write_text("0")
@@ -343,7 +375,10 @@ if __name__ == "__main__":
 
         # Method B: Steps-based pretraining (original, mutually exclusive)
         elif value_pretrain_steps > 0:
-            cprint(f"[Value Pretrain] Starting value model pretraining until {value_pretrain_steps} global steps...", "cyan")
+            cprint(
+                f"[Value Pretrain] Starting value model pretraining until {value_pretrain_steps} global steps...",
+                "cyan",
+            )
 
             # Track cumulative global steps across epochs
             cumulative_global_steps = 0
@@ -351,7 +386,10 @@ if __name__ == "__main__":
 
             while cumulative_global_steps < value_pretrain_steps:
                 pretrain_epoch += 1
-                cprint(f"[Value Pretrain] Epoch {pretrain_epoch} (cumulative steps: {cumulative_global_steps}/{value_pretrain_steps}) - Rolling out...", "cyan")
+                cprint(
+                    f"[Value Pretrain] Epoch {pretrain_epoch} (cumulative steps: {cumulative_global_steps}/{value_pretrain_steps}) - Rolling out...",
+                    "cyan",
+                )
                 sample(0, "train")
                 if is_code_task:
                     execute(0, "train")
@@ -365,11 +403,17 @@ if __name__ == "__main__":
                     try:
                         epoch_steps = int(steps_file.read_text().strip())
                         cumulative_global_steps += epoch_steps
-                        cprint(f"[Value Pretrain] Epoch {pretrain_epoch} completed: +{epoch_steps} steps, total: {cumulative_global_steps}/{value_pretrain_steps}", "cyan")
+                        cprint(
+                            f"[Value Pretrain] Epoch {pretrain_epoch} completed: +{epoch_steps} steps, total: {cumulative_global_steps}/{value_pretrain_steps}",
+                            "cyan",
+                        )
                     except (ValueError, OSError):
-                        cprint(f"[Value Pretrain] Warning: Could not read steps file", "yellow")
+                        cprint("[Value Pretrain] Warning: Could not read steps file", "yellow")
 
-            cprint(f"[Value Pretrain] Pretraining completed. Total epochs: {pretrain_epoch}, Total steps: {cumulative_global_steps}", "green")
+            cprint(
+                f"[Value Pretrain] Pretraining completed. Total epochs: {pretrain_epoch}, Total steps: {cumulative_global_steps}",
+                "green",
+            )
 
             # Reset cursor to initial position for main training
             cursor_file = Path(project_name) / "temp_data" / "data_cursor.txt"
@@ -380,8 +424,6 @@ if __name__ == "__main__":
     i = config.experiment.current_epoch
 
     while i <= config.experiment.total_step:
-
-
         sample(i, "train")
         if is_code_task:
             execute(i, "train")
@@ -391,8 +433,9 @@ if __name__ == "__main__":
         data_filter_enabled = OmegaConf.select(config, "rollout.data_filter", default=False)
         resample_enabled = OmegaConf.select(config, "rollout.data_filter_resample_enabled", default=True)
         if data_filter_enabled and resample_enabled:
-            from pathlib import Path
             import json
+            from pathlib import Path
+
             stats_file = Path(project_name) / "temp_data" / "data_filter_stats.txt"
             if stats_file.exists():
                 with open(stats_file, "r") as f:
@@ -401,19 +444,22 @@ if __name__ == "__main__":
                 kept_count = stats.get("kept_count", 0)
                 target_count = stats.get("target_count", 0)
                 if kept_count < target_count and filtered_count > 0:
-                    cprint(f"[RL Loop] Resampling: filtered={filtered_count}, kept={kept_count}, target={target_count}", "cyan")
+                    cprint(
+                        f"[RL Loop] Resampling: filtered={filtered_count}, kept={kept_count}, target={target_count}",
+                        "cyan",
+                    )
                     sample(i, "train")
                     if is_code_task:
                         execute(i, "train")
                     reward(i, "train", is_code_task)
 
         if have_value_model:
-            train(i, target = "value")
-            train(i, target = "policy")
+            train(i, target="value")
+            train(i, target="policy")
         else:
             # Without value model: compute advantage first, then train policy
-            train(i, target = "policy_no_value")  # Compute advantage
-            train(i, target = "policy")           # Train policy
+            train(i, target="policy_no_value")  # Compute advantage
+            train(i, target="policy")  # Train policy
 
         if i % config.experiment.eval_every == 0:
             remasking_strategy_list = config.evaluation.remasking_strategy
@@ -422,12 +468,16 @@ if __name__ == "__main__":
             for j in range(len(remasking_strategy_list)):
                 remasking_strategy = remasking_strategy_list[j]
                 top_k = top_k_list[j]
-                sample(i, "evaluation", block_size = block_size, top_k = top_k, remasking_strategy = remasking_strategy)
+                sample(i, "evaluation", block_size=block_size, top_k=top_k, remasking_strategy=remasking_strategy)
                 if is_code_task:
                     execute(i, "evaluation")
-                reward(i, "evaluation", is_code_task, block_size = block_size, top_k = top_k, remasking_strategy = remasking_strategy)
+                reward(
+                    i,
+                    "evaluation",
+                    is_code_task,
+                    block_size=block_size,
+                    top_k=top_k,
+                    remasking_strategy=remasking_strategy,
+                )
 
         i += 1
-
-
-

@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="description" content="LightningRL: Breaking the Accuracy–Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning">
+  <meta name="keywords" content="LightningRL, dLLMs, Reinforcement Learning, GRPO, Diffusion Language Models, ICML 2026">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LightningRL: Breaking the Accuracy–Parallelism Trade-off of Block-wise dLLMs via RL</title>
+
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+
+  <link rel="stylesheet" href="./static/css/bulma.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="icon" href="./static/images/logo.png">
+  <link rel="stylesheet" href="./static/css/index.css">
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="./static/js/bulma-carousel.min.js"></script>
+  <script src="./static/js/bulma-slider.min.js"></script>
+  <script src="./static/js/index.js"></script>
+</head>
+
+<body class="lang-en">
+
+  <!-- ===== Navbar ===== -->
+  <nav class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
+    </div>
+    <div class="navbar-menu">
+      <div class="navbar-start" style="flex-grow: 1; justify-content: center;">
+      </div>
+      <div class="navbar-end">
+        <div class="navbar-item">
+          <div class="lang-toggle">
+            <span class="lang-option lang-en-btn active">EN</span>
+            <span class="lang-option lang-zh-btn">中</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===== Hero Section ===== -->
+  <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <h1 class="title is-1 publication-title">
+              <img src="./static/images/logo.png" alt="" class="logo-purple" style="height: 1.1em; vertical-align: -0.15em;">LightningRL: Breaking the Accuracy&ndash;Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning
+            </h1>
+
+            <div class="is-size-4 publication-authors">
+              <span class="author-block">
+                Yanzhe Hu<sup>1,2</sup>,
+                Yijie Jin<sup>1</sup>,
+                Pengfei Liu<sup>1</sup>,
+                Kai Yu<sup>1</sup>,
+                Zhijie Deng<sup>1,&dagger;</sup>
+              </span>
+            </div>
+
+            <div class="is-size-5 publication-authors">
+              <span class="author-block"><sup>1</sup>
+                <span class="lang-en">Shanghai Jiao Tong University,</span>
+                <span class="lang-zh">上海交通大学,</span>
+              </span>
+              <span class="author-block"><sup>2</sup>
+                <span class="lang-en">Huazhong University of Science and Technology</span>
+                <span class="lang-zh">华中科技大学</span>
+              </span>
+              <br>
+              <span class="author-block" style="font-size: 0.85em;"><sup>&dagger;</sup>
+                <span class="lang-en">Correspondence</span>
+                <span class="lang-zh">通讯作者</span>
+              </span>
+            </div>
+
+            <div class="column has-text-centered">
+              <div class="publication-links" style="gap: 16px; display: flex; flex-wrap: wrap; justify-content: center;">
+                <!-- arXiv -->
+                <span class="link-block">
+                  <a href="#" class="external-link button is-normal is-rounded btn-gradient">
+                    <span class="icon is-small">
+                      <i class="ai ai-arxiv"></i>
+                    </span>
+                    <span class="is-flex is-flex-direction-column is-align-items-center has-text-centered"
+                      style="line-height:1.05; gap:2px;">
+                      <span>arXiv</span>
+                      <span class="coming-soon">coming soon</span>
+                    </span>
+                  </a>
+                </span>
+                <!-- Model -->
+                <span class="link-block">
+                  <a href="#" class="external-link button is-normal is-rounded btn-gradient">
+                    <span class="icon">
+                      &#129303;
+                    </span>
+                    <span class="is-flex is-flex-direction-column is-align-items-center has-text-centered"
+                      style="line-height:1.05; gap:2px;">
+                      <span>Model</span>
+                      <span class="coming-soon">coming soon</span>
+                    </span>
+                  </a>
+                </span>
+                <!-- Code -->
+                <span class="link-block">
+                  <a href="#" class="external-link button is-normal is-rounded btn-gradient">
+                    <span class="icon">
+                      <i class="fab fa-github"></i>
+                    </span>
+                    <span class="is-flex is-flex-direction-column is-align-items-center has-text-centered"
+                      style="line-height:1.05; gap:2px;">
+                      <span>Code</span>
+                      <span class="coming-soon">coming soon</span>
+                    </span>
+                  </a>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Figure 1: Interactive Charts ===== -->
+  <div class="columns is-centered has-text-centered">
+    <div class="column" style="max-width: 1200px;">
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; align-items: stretch;">
+        <div style="flex: 3; min-width: 500px;">
+          <canvas id="chart-accuracy" height="280"></canvas>
+        </div>
+        <div style="flex: 1; min-width: 180px;">
+          <canvas id="chart-speed" height="280"></canvas>
+        </div>
+        <div style="flex: 1; min-width: 180px;">
+          <canvas id="chart-aup" height="280"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var models = ['LightningRL', 'EAGLE-3', 'd3LLM-LLaDA', 'dParallel-LLaDA', 'Fast-dLLM-v2', 'Qwen2.5-7B'];
+    var colors = [
+      'rgba(109, 40, 217, 0.90)',   // LightningRL - deep violet (standout)
+      'rgba(139, 92, 246, 0.80)',   // EAGLE-3 - medium violet
+      'rgba(167, 139, 250, 0.75)',  // d3LLM-LLaDA - light violet
+      'rgba(196, 181, 253, 0.70)',  // dParallel-LLaDA - lavender
+      'rgba(221, 214, 254, 0.75)',  // Fast-dLLM-v2 - pale lavender
+      'rgba(237, 233, 254, 0.80)'   // Qwen2.5-7B - faint lavender
+    ];
+    var borders = [
+      'rgba(109, 40, 217, 1)',
+      'rgba(139, 92, 246, 1)',
+      'rgba(167, 139, 250, 1)',
+      'rgba(196, 181, 253, 1)',
+      'rgba(221, 214, 254, 1)',
+      'rgba(237, 233, 254, 1)'
+    ];
+
+    // Accuracy data
+    var accData = {
+      'GSM8K':     [90.3, 76.6, 73.1, 72.6, 77.5, 74.1],
+      'MATH500':   [63.0, 39.8, 30.4, 30.2, 48.7, 41.4],
+      'MBPP':      [58.3, 60.2, 40.6, 40.0, 50.1, 63.6],
+      'HumanEval': [72.6, 67.6, 39.6, 39.0, 61.7, 67.7]
+    };
+    var benchmarks = Object.keys(accData);
+
+    var accDatasets = models.map(function(m, i) {
+      return {
+        label: m,
+        data: benchmarks.map(function(b) { return accData[b][i]; }),
+        backgroundColor: colors[i],
+        borderColor: borders[i],
+        borderWidth: 1,
+        borderRadius: 4
+      };
+    });
+
+    var defaultFont = { family: "'Noto Sans', sans-serif" };
+    var datalabelPlugin = {
+      id: 'datalabels',
+      afterDatasetsDraw: function(chart) {
+        var ctx = chart.ctx;
+        chart.data.datasets.forEach(function(dataset, di) {
+          var meta = chart.getDatasetMeta(di);
+          meta.data.forEach(function(bar, index) {
+            var value = dataset.data[index];
+            ctx.save();
+            ctx.fillStyle = '#475569';
+            ctx.font = 'bold 10px "Noto Sans", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(value, bar.x, bar.y - 4);
+            ctx.restore();
+          });
+        });
+      }
+    };
+
+    new Chart(document.getElementById('chart-accuracy'), {
+      type: 'bar',
+      data: { labels: benchmarks, datasets: accDatasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: { display: true, text: 'Score (%)', font: { size: 14, weight: 'bold', family: defaultFont.family }, color: '#1F2937' },
+          legend: { display: true, position: 'top', labels: { font: { size: 11, family: defaultFont.family }, usePointStyle: true, pointStyle: 'rectRounded', padding: 12 } }
+        },
+        scales: {
+          y: { beginAtZero: true, max: 100, grid: { color: 'rgba(124,58,237,0.06)' }, ticks: { font: { family: defaultFont.family } } },
+          x: { grid: { display: false }, ticks: { font: { family: defaultFont.family, weight: 'bold' } } }
+        }
+      },
+      plugins: [datalabelPlugin]
+    });
+
+    // Speed (TPF)
+    var tpfData = [7.32, 5.63, 6.25, 3.90, 2.36, 1.00];
+    new Chart(document.getElementById('chart-speed'), {
+      type: 'bar',
+      data: {
+        labels: models,
+        datasets: [{
+          data: tpfData,
+          backgroundColor: colors,
+          borderColor: borders,
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          title: { display: true, text: 'Speed (TPF)', font: { size: 14, weight: 'bold', family: defaultFont.family }, color: '#1F2937' },
+          legend: { display: false }
+        },
+        scales: {
+          x: { beginAtZero: true, grid: { color: 'rgba(124,58,237,0.06)' }, ticks: { font: { family: defaultFont.family } } },
+          y: { grid: { display: false }, ticks: { font: { size: 11, family: defaultFont.family } } }
+        }
+      },
+      plugins: [{
+        id: 'hbarLabels',
+        afterDatasetsDraw: function(chart) {
+          var ctx = chart.ctx;
+          var meta = chart.getDatasetMeta(0);
+          meta.data.forEach(function(bar, i) {
+            ctx.save();
+            ctx.fillStyle = '#475569';
+            ctx.font = 'bold 11px "Noto Sans", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(chart.data.datasets[0].data[i], bar.x + 4, bar.y);
+            ctx.restore();
+          });
+        }
+      }]
+    });
+
+    // AUP
+    var aupData = [497.9, 276.1, 232.6, 141.7, 123.4, 61.6];
+    new Chart(document.getElementById('chart-aup'), {
+      type: 'bar',
+      data: {
+        labels: models,
+        datasets: [{
+          data: aupData,
+          backgroundColor: colors,
+          borderColor: borders,
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          title: { display: true, text: 'AUP', font: { size: 14, weight: 'bold', family: defaultFont.family }, color: '#1F2937' },
+          legend: { display: false }
+        },
+        scales: {
+          x: { beginAtZero: true, grid: { color: 'rgba(124,58,237,0.06)' }, ticks: { font: { family: defaultFont.family } } },
+          y: { grid: { display: false }, ticks: { font: { size: 11, family: defaultFont.family } } }
+        }
+      },
+      plugins: [{
+        id: 'hbarLabels2',
+        afterDatasetsDraw: function(chart) {
+          var ctx = chart.ctx;
+          var meta = chart.getDatasetMeta(0);
+          meta.data.forEach(function(bar, i) {
+            ctx.save();
+            ctx.fillStyle = '#475569';
+            ctx.font = 'bold 11px "Noto Sans", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(chart.data.datasets[0].data[i], bar.x + 4, bar.y);
+            ctx.restore();
+          });
+        }
+      }]
+    });
+  })();
+  </script>
+
+  <!-- ===== TL;DR ===== -->
+  <div class="columns is-centered has-text-centered" style="margin-top: 2rem;">
+    <div class="column is-four-fifths">
+      <h2 class="title is-3">TL;DR</h2>
+      <div class="content has-text-justified" style="display:flex; justify-content:center;">
+        <div style="max-width:900px; font-size:1.2rem; margin:0 auto;">
+          <p class="lang-en">
+            We propose <b>LightningRL</b>, a reinforcement learning framework that breaks the accuracy&ndash;parallelism
+            trade-off of block-wise diffusion Large Language Models (dLLMs). LightningRL optimizes both speed and
+            generation quality simultaneously through three key modifications to GRPO: <b>per-reward decoupled
+            normalization</b>, <b>token-level NLL regularization</b>, and <b>TPF-aware filtering</b>. Applied to
+            SDAR-8B, LightningRL achieves an average TPF of <span class="highlight-number">7.32</span> and AUP of
+            <span class="highlight-number">497.9</span>, significantly outperforming EAGLE-3, Fast-dLLM-v2, and other
+            leading baselines across math and code benchmarks.
+          </p>
+          <p class="lang-zh">
+            我们提出了 <b>LightningRL</b>，一个通过强化学习打破块级扩散大语言模型（dLLMs）精度-并行度权衡的框架。
+            LightningRL 通过对 GRPO 的三项关键改进同时优化速度和生成质量：<b>逐奖励解耦归一化</b>、<b>Token级 NLL
+            正则化</b>和<b>TPF感知过滤</b>。应用于 SDAR-8B 后，LightningRL 实现了平均
+            <span class="highlight-number">7.32</span> TPF 和
+            <span class="highlight-number">497.9</span> AUP，显著超越 EAGLE-3、Fast-dLLM-v2 等领先基线。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="container is-max-desktop">
+
+      <!-- ===== Method Overview (Figure 2) ===== -->
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3 has-text-centered">
+            <span class="lang-en">Method Overview</span>
+            <span class="lang-zh">方法概述</span>
+          </h2>
+          <div style="text-align: center; margin-bottom: 16px;">
+            <img src="./static/images/figure2.png" alt="LightningRL overview" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 16px rgba(124, 58, 237, 0.08);">
+          </div>
+          <div class="content has-text-justified" style="max-width:800px; margin:0 auto;">
+            <p class="lang-en">
+              <i>LightningRL samples a group of decoding trajectories per prompt, applies per-reward decoupled
+              normalization to preserve within-group ranking under heterogeneous scales. The policy is optimized with
+              a GRPO-style objective plus a token-level NLL anchor. The resulting shift moves probability mass toward
+              the fastest correct trajectory, improving TPF without degrading accuracy.</i>
+            </p>
+            <p class="lang-zh">
+              <i>LightningRL 对每个提示采样一组解码轨迹，应用逐奖励解耦归一化在异构尺度下保持组内排序。策略通过
+              GRPO 风格的目标函数加上 Token 级 NLL 锚点进行优化。最终的概率质量偏移朝向最快的正确轨迹，在不降低
+              精度的情况下提升 TPF。</i>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Highlights ===== -->
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3 has-text-centered">
+            <span class="lang-en">Highlights</span>
+            <span class="lang-zh">亮点</span>
+          </h2>
+          <div class="content has-text-justified" style="max-width:800px; font-size:1.2rem; margin:0 auto;">
+            <ul class="lang-en">
+              <li><b>Breaking the Trade-off</b> &mdash; LightningRL achieves <span class="highlight-number">7.32</span> average TPF and <span class="highlight-number">497.9</span> AUP, simultaneously improving both speed and accuracy</li>
+              <li><b>Three Key Innovations</b> &mdash; Decoupled normalization, token-level NLL loss, and TPF-aware filtering work synergistically to stabilize multi-objective RL training</li>
+              <li><b>Strong Generalization</b> &mdash; Consistent improvements across math (GSM8K, MATH500) and code (MBPP, HumanEval) benchmarks</li>
+              <li><b>Practical Speed</b> &mdash; <span class="highlight-number">336.03</span> TPS on H100 GPUs, 3.2&times; faster than the SDAR baseline</li>
+            </ul>
+            <ul class="lang-zh">
+              <li><b>打破权衡</b> &mdash; LightningRL 实现平均 <span class="highlight-number">7.32</span> TPF 和 <span class="highlight-number">497.9</span> AUP，同时提升速度和精度</li>
+              <li><b>三项关键创新</b> &mdash; 解耦归一化、Token级 NLL 损失和 TPF 感知过滤协同工作，稳定多目标 RL 训练</li>
+              <li><b>强泛化性</b> &mdash; 在数学（GSM8K、MATH500）和代码（MBPP、HumanEval）基准上一致性提升</li>
+              <li><b>实际加速</b> &mdash; H100 GPU 上达到 <span class="highlight-number">336.03</span> TPS，比 SDAR 基线快 3.2 倍</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <br>
+
+      <!-- ===== Results ===== -->
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">
+            <span class="lang-en">Results</span>
+            <span class="lang-zh">实验结果</span>
+          </h2>
+
+          <!-- ===== Table 1: LightningRL vs RL Methods ===== -->
+          <i class="lang-en">Table 1. Evaluation results of LightningRL and RL methods on math and code benchmarks.</i>
+          <i class="lang-zh">表 1. LightningRL 与 RL 方法在数学和代码基准上的评估结果。</i>
+          <div class="score-card">
+            <h3 class="score-title"><img src="./static/images/logo.png" class="logo-purple" style="height: 24px;"><span class="badge">LightningRL vs RL Methods</span></h3>
+            <div class="score-wrap" style="overflow-x:auto;">
+              <table class="score-table">
+                <colgroup>
+                  <col style="min-width:180px;">
+                  <col span="12" style="min-width:75px;">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowspan="2">Model</th>
+                    <th colspan="3">GSM8K</th>
+                    <th colspan="3">MATH500</th>
+                    <th colspan="3">MBPP</th>
+                    <th colspan="3">HumanEval</th>
+                  </tr>
+                  <tr>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SDAR-8B-b32</td>
+                    <td>88.9</td><td>2.85</td><td>252.5</td>
+                    <td>63.6</td><td>4.81</td><td>299.5</td>
+                    <td>58.0</td><td>2.44</td><td>81.1</td>
+                    <td>73.5</td><td>2.39</td><td>123.8</td>
+                  </tr>
+                  <tr>
+                    <td>TraceRL-8B-b32</td>
+                    <td>76.9</td><td>5.04</td><td>378.6</td>
+                    <td>60.6</td><td>4.82</td><td>284.6</td>
+                    <td>57.8</td><td>2.50</td><td>144.2</td>
+                    <td>75.0</td><td>2.29</td><td>171.6</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO(traj)-8B-b32</td>
+                    <td>86.6</td><td>4.87</td><td>414.1</td>
+                    <td>61.6</td><td>5.04</td><td>301.2</td>
+                    <td>56.8</td><td>2.70</td><td>152.7</td>
+                    <td>76.0</td><td>2.33</td><td>176.7</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL-8B-b32</b></td>
+                    <td><b>90.3</b></td><td><b>5.58</b></td><td><b>492.4</b></td>
+                    <td><b>63.0</b></td><td><b>6.28</b></td><td><b>407.5</b></td>
+                    <td><b>58.3</b></td><td><b>11.10</b></td><td><b>641.6</b></td>
+                    <td><b>72.6</b></td><td><b>6.30</b></td><td><b>450.1</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <hr>
+
+          <!-- ===== Table 2: Full Comparison ===== -->
+          <i class="lang-en">Table 2. Evaluation results of LightningRL and baselines on math and code benchmarks.</i>
+          <i class="lang-zh">表 2. LightningRL 与所有基线在数学和代码基准上的对比结果。</i>
+          <div class="score-card">
+            <h3 class="score-title"><img src="./static/images/logo.png" class="logo-purple" style="height: 24px;"><span class="badge">
+              <span class="lang-en">Full Comparison</span>
+              <span class="lang-zh">全面对比</span>
+            </span></h3>
+            <div class="score-wrap" style="overflow-x:auto;">
+              <table class="score-table">
+                <colgroup>
+                  <col style="min-width:220px;">
+                  <col span="12" style="min-width:70px;">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowspan="2">Model</th>
+                    <th colspan="3">GSM8K</th>
+                    <th colspan="3">MATH500</th>
+                    <th colspan="3">MBPP</th>
+                    <th colspan="3">HumanEval</th>
+                  </tr>
+                  <tr>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- dLLMs -->
+                  <tr class="category-row"><td colspan="13">dLLMs</td></tr>
+                  <tr>
+                    <td>Dream</td>
+                    <td>83.9</td><td>1.00</td><td>83.9</td>
+                    <td>39.6</td><td>1.00</td><td>39.6</td>
+                    <td>57.2</td><td>1.00</td><td>57.2</td>
+                    <td>55.2</td><td>1.00</td><td>55.2</td>
+                  </tr>
+                  <tr>
+                    <td>Fast-dLLM-Dream</td>
+                    <td>79.0</td><td>1.44</td><td>116.5</td>
+                    <td>38.3</td><td>1.78</td><td>55.2</td>
+                    <td>53.2</td><td>1.20</td><td>63.6</td>
+                    <td>54.3</td><td>1.33</td><td>63.5</td>
+                  </tr>
+                  <tr>
+                    <td>dParallel-Dream</td>
+                    <td>82.1</td><td>3.02</td><td>245.7</td>
+                    <td>38.7</td><td>2.94</td><td>77.9</td>
+                    <td>55.4</td><td>2.24</td><td>108.0</td>
+                    <td>54.3</td><td>2.57</td><td>98.8</td>
+                  </tr>
+                  <tr>
+                    <td>d3LLM-Dream</td>
+                    <td>81.4</td><td>4.94</td><td>391.3</td>
+                    <td>38.2</td><td>3.92</td><td>97.5</td>
+                    <td>55.6</td><td>2.96</td><td>141.4</td>
+                    <td>57.1</td><td>3.20</td><td>129.5</td>
+                  </tr>
+                  <tr>
+                    <td>LLaDA</td>
+                    <td>72.6</td><td>1.00</td><td>72.6</td>
+                    <td>32.2</td><td>1.00</td><td>32.2</td>
+                    <td>47.1</td><td>1.00</td><td>47.1</td>
+                    <td>38.3</td><td>1.00</td><td>38.3</td>
+                  </tr>
+                  <tr>
+                    <td>Fast-dLLM-LLaDA</td>
+                    <td>74.7</td><td>2.77</td><td>205.8</td>
+                    <td>30.8</td><td>1.97</td><td>47.2</td>
+                    <td>38.6</td><td>2.13</td><td>56.6</td>
+                    <td>37.8</td><td>2.56</td><td>54.0</td>
+                  </tr>
+                  <tr>
+                    <td>D2F-LLaDA</td>
+                    <td>73.2</td><td>2.88</td><td>209.7</td>
+                    <td>28.7</td><td>2.38</td><td>45.5</td>
+                    <td>38.0</td><td>1.94</td><td>50.0</td>
+                    <td>36.6</td><td>2.69</td><td>62.0</td>
+                  </tr>
+                  <tr>
+                    <td>dParallel-LLaDA</td>
+                    <td>72.6</td><td>5.14</td><td>358.1</td>
+                    <td>30.2</td><td>3.17</td><td>64.5</td>
+                    <td>40.0</td><td>2.35</td><td>60.5</td>
+                    <td>39.0</td><td>4.93</td><td>83.7</td>
+                  </tr>
+                  <tr>
+                    <td>d3LLM-LLaDA</td>
+                    <td>73.1</td><td>9.11</td><td>637.7</td>
+                    <td>30.4</td><td>5.74</td><td>107.6</td>
+                    <td>40.6</td><td>4.21</td><td>88.4</td>
+                    <td>39.6</td><td>5.95</td><td>96.6</td>
+                  </tr>
+
+                  <!-- AR Models -->
+                  <tr class="category-row"><td colspan="13">
+                    <span class="lang-en">AR Models</span>
+                    <span class="lang-zh">自回归模型</span>
+                  </td></tr>
+                  <tr>
+                    <td>Qwen-2.5-7B-Instruct</td>
+                    <td>74.1</td><td>1.00</td><td>74.1</td>
+                    <td>41.4</td><td>1.00</td><td>41.1</td>
+                    <td>63.6</td><td>1.00</td><td>63.6</td>
+                    <td>67.7</td><td>1.00</td><td>67.7</td>
+                  </tr>
+                  <tr>
+                    <td>EAGLE-3 (LLaMA-3.1)</td>
+                    <td>76.6</td><td>5.12</td><td>319.0</td>
+                    <td>39.8</td><td>5.72</td><td>142.1</td>
+                    <td>60.2</td><td>5.69</td><td>298.6</td>
+                    <td>67.6</td><td>5.98</td><td>344.8</td>
+                  </tr>
+
+                  <!-- Block-wise dLLMs -->
+                  <tr class="category-row"><td colspan="13">
+                    <span class="lang-en">Block-wise dLLMs</span>
+                    <span class="lang-zh">块级扩散 LLM</span>
+                  </td></tr>
+                  <tr>
+                    <td>Fast-dLLM-v2</td>
+                    <td>77.5</td><td>2.21</td><td>156.0</td>
+                    <td>48.7</td><td>2.61</td><td>126.7</td>
+                    <td>50.1</td><td>2.04</td><td>81.9</td>
+                    <td>61.7</td><td>2.58</td><td>128.9</td>
+                  </tr>
+                  <tr>
+                    <td>SDAR-8B-b32</td>
+                    <td>88.9</td><td>2.85</td><td>252.5</td>
+                    <td>63.6</td><td>4.81</td><td>299.5</td>
+                    <td>58.0</td><td>2.44</td><td>81.1</td>
+                    <td>73.5</td><td>2.39</td><td>123.8</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL-8B-b32</b></td>
+                    <td><b>90.3</b></td><td><b>5.58</b></td><td><b>492.4</b></td>
+                    <td><b>63.0</b></td><td><b>6.28</b></td><td><b>407.5</b></td>
+                    <td><b>58.3</b></td><td><b>11.10</b></td><td><b>641.6</b></td>
+                    <td><b>72.6</b></td><td><b>6.30</b></td><td><b>450.1</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <hr>
+
+          <!-- ===== Figures 6 & 7: Training Dynamics ===== -->
+          <h3 class="title is-4 has-text-centered" style="margin-top: 2rem;">
+            <span class="lang-en">Training Dynamics &amp; Decoding Behavior</span>
+            <span class="lang-zh">训练动态与解码行为</span>
+          </h3>
+          <div class="figures-row">
+            <div class="figure-item">
+              <img src="./static/images/figure6.png" alt="Training reward curves">
+              <p class="figure-caption">
+                <span class="lang-en">Figure 6. Total reward curves. LightningRL converges stably while TraceRL collapses.</span>
+                <span class="lang-zh">图 6. 总奖励曲线。LightningRL 稳定收敛，而 TraceRL 崩溃。</span>
+              </p>
+            </div>
+            <div class="figure-item">
+              <img src="./static/images/figure7.png" alt="Decoding behavior">
+              <p class="figure-caption">
+                <span class="lang-en">Figure 7. Decoding behavior. LightningRL maintains higher throughput and reduces long-tail decoding steps.</span>
+                <span class="lang-zh">图 7. 解码行为。LightningRL 保持更高吞吐量并减少长尾解码步骤。</span>
+              </p>
+            </div>
+          </div>
+          <hr>
+
+          <!-- ===== Table 6: Scalability ===== -->
+          <i class="lang-en">Table 6. Comparison of SDAR and LightningRL under identical settings, grouped by Model Scale and Block Size.</i>
+          <i class="lang-zh">表 6. SDAR 和 LightningRL 在相同设置下的对比，按模型规模和块大小分组。</i>
+          <div class="score-card">
+            <h3 class="score-title"><img src="./static/images/logo.png" class="logo-purple" style="height: 24px;"><span class="badge">
+              <span class="lang-en">Scalability</span>
+              <span class="lang-zh">可扩展性</span>
+            </span></h3>
+            <div class="score-wrap" style="overflow-x:auto;">
+              <table class="score-table">
+                <colgroup>
+                  <col style="min-width:60px;">
+                  <col style="min-width:40px;">
+                  <col style="min-width:150px;">
+                  <col span="12" style="min-width:70px;">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowspan="2">Scale</th>
+                    <th rowspan="2">BS</th>
+                    <th rowspan="2">Model</th>
+                    <th colspan="3">GSM8K</th>
+                    <th colspan="3">MATH500</th>
+                    <th colspan="3">MBPP</th>
+                    <th colspan="3">HumanEval</th>
+                  </tr>
+                  <tr>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                    <th>Acc</th><th>TPF</th><th>AUP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- 1.7B, BS=32 -->
+                  <tr>
+                    <td rowspan="2">1.7B</td>
+                    <td rowspan="2">32</td>
+                    <td>SDAR</td>
+                    <td>71.5</td><td>2.48</td><td>176.4</td>
+                    <td>41.2</td><td>5.62</td><td>226.3</td>
+                    <td>39.0</td><td>3.86</td><td>149.8</td>
+                    <td>48.8</td><td>2.81</td><td>136.0</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL</b></td>
+                    <td><b>71.7</b></td><td><b>3.40</b></td><td><b>251.4</b></td>
+                    <td><b>41.2</b></td><td><b>6.01</b></td><td><b>241.2</b></td>
+                    <td><b>37.3</b></td><td><b>5.07</b></td><td><b>185.8</b></td>
+                    <td><b>48.2</b></td><td><b>3.43</b></td><td><b>165.2</b></td>
+                  </tr>
+                  <!-- 4B, BS=32 -->
+                  <tr>
+                    <td rowspan="2">4B</td>
+                    <td rowspan="2">32</td>
+                    <td>SDAR</td>
+                    <td>86.6</td><td>3.10</td><td>243.8</td>
+                    <td>53.6</td><td>5.09</td><td>263.9</td>
+                    <td>54.0</td><td>1.96</td><td>105.9</td>
+                    <td>59.8</td><td>3.67</td><td>216.8</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL</b></td>
+                    <td><b>85.4</b></td><td><b>4.37</b></td><td><b>374.7</b></td>
+                    <td><b>56.4</b></td><td><b>6.55</b></td><td><b>358.7</b></td>
+                    <td><b>52.2</b></td><td><b>3.05</b></td><td><b>158.3</b></td>
+                    <td><b>57.3</b></td><td><b>4.35</b></td><td><b>242.3</b></td>
+                  </tr>
+                  <!-- 8B, BS=32 -->
+                  <tr>
+                    <td rowspan="2">8B</td>
+                    <td rowspan="2">32</td>
+                    <td>SDAR</td>
+                    <td>88.9</td><td>2.85</td><td>252.5</td>
+                    <td>63.6</td><td>4.81</td><td>299.5</td>
+                    <td>58.0</td><td>2.44</td><td>81.1</td>
+                    <td>74.4</td><td>2.39</td><td>123.8</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL</b></td>
+                    <td><b>90.3</b></td><td><b>5.58</b></td><td><b>492.4</b></td>
+                    <td><b>63.0</b></td><td><b>6.28</b></td><td><b>407.5</b></td>
+                    <td><b>58.3</b></td><td><b>11.10</b></td><td><b>641.6</b></td>
+                    <td><b>72.6</b></td><td><b>6.30</b></td><td><b>450.1</b></td>
+                  </tr>
+                  <!-- 8B, BS=8 -->
+                  <tr>
+                    <td rowspan="2">8B</td>
+                    <td rowspan="2">8</td>
+                    <td>SDAR</td>
+                    <td>91.0</td><td>2.96</td><td>269.1</td>
+                    <td>64.1</td><td>3.53</td><td>224.8</td>
+                    <td>59.6</td><td>1.72</td><td>103.3</td>
+                    <td>76.9</td><td>2.77</td><td>211.6</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL</b></td>
+                    <td><b>89.4</b></td><td><b>3.75</b></td><td><b>331.8</b></td>
+                    <td><b>67.0</b></td><td><b>4.21</b></td><td><b>279.5</b></td>
+                    <td><b>58.2</b></td><td><b>3.11</b></td><td><b>179.3</b></td>
+                    <td><b>76.8</b></td><td><b>3.30</b></td><td><b>258.8</b></td>
+                  </tr>
+                  <!-- 8B, BS=4 -->
+                  <tr>
+                    <td rowspan="2">8B</td>
+                    <td rowspan="2">4</td>
+                    <td>SDAR</td>
+                    <td>91.1</td><td>2.35</td><td>213.9</td>
+                    <td>71.2</td><td>2.49</td><td>176.8</td>
+                    <td>63.3</td><td>1.84</td><td>116.7</td>
+                    <td>78.6</td><td>1.53</td><td>120.3</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL</b></td>
+                    <td><b>91.0</b></td><td><b>3.21</b></td><td><b>291.6</b></td>
+                    <td><b>70.3</b></td><td><b>3.42</b></td><td><b>237.7</b></td>
+                    <td><b>63.2</b></td><td><b>2.47</b></td><td><b>155.5</b></td>
+                    <td><b>78.2</b></td><td><b>2.32</b></td><td><b>181.3</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <hr>
+
+          <!-- ===== Table 7: Wall-Clock Speed ===== -->
+          <i class="lang-en">Table 7. Tokens Per Second (TPS) performance comparison on H100 GPUs (GSM8K).</i>
+          <i class="lang-zh">表 7. H100 GPU 上的每秒 Token 数 (TPS) 性能对比（GSM8K）。</i>
+          <div class="score-card">
+            <h3 class="score-title"><img src="./static/images/logo.png" class="logo-purple" style="height: 24px;"><span class="badge">
+              <span class="lang-en">Wall-Clock Speed</span>
+              <span class="lang-zh">实际推理速度</span>
+            </span></h3>
+            <div class="score-wrap" style="overflow-x:auto;">
+              <table class="score-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>H100 TPS</th>
+                    <th>TPF</th>
+                    <th>Acc (%)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Qwen-2.5-7B-Instruct</td>
+                    <td>57.3</td>
+                    <td>1.00</td>
+                    <td>74.1</td>
+                  </tr>
+                  <tr>
+                    <td>Fast-dLLM-v2</td>
+                    <td>150.0</td>
+                    <td>2.21</td>
+                    <td>77.5</td>
+                  </tr>
+                  <tr>
+                    <td>dParallel-LLaDA</td>
+                    <td>172.2</td>
+                    <td>5.14</td>
+                    <td>72.6</td>
+                  </tr>
+                  <tr>
+                    <td>d3LLM-LLaDA</td>
+                    <td>288.9</td>
+                    <td>9.11</td>
+                    <td>73.1</td>
+                  </tr>
+                  <tr>
+                    <td>SDAR</td>
+                    <td>105.55</td>
+                    <td>2.85</td>
+                    <td>88.9</td>
+                  </tr>
+                  <tr class="row-highlight">
+                    <td><b>LightningRL</b></td>
+                    <td><b>336.03</b></td>
+                    <td><b>5.58</b></td>
+                    <td><b>90.3</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== BibTeX ===== -->
+  <section class="section" id="BibTeX">
+    <div class="container is-max-desktop content">
+      <h2 class="title">BibTeX</h2>
+      <pre><code>@inproceedings{hu2026lightningrl,
+  title={LightningRL: Breaking the Accuracy--Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning},
+  author={Hu, Yanzhe and Jin, Yijie and Liu, Pengfei and Yu, Kai and Deng, Zhijie},
+  booktitle={Proceedings of the International Conference on Machine Learning (ICML)},
+  year={2026}
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p>
+            <span class="lang-en">
+              This website is licensed under a <a rel="license"
+              href="http://creativecommons.org/licenses/by-sa/4.0/">Creative
+              Commons Attribution-ShareAlike 4.0 International License</a>.
+            </span>
+            <span class="lang-zh">
+              本网站基于 <a rel="license"
+              href="http://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0 国际许可协议</a>。
+            </span>
+          </p>
+          <p>
+            <span class="lang-en">
+              The website template is adapted from <a href="https://github.com/nerfies/nerfies.github.io">Nerfies</a>.
+            </span>
+            <span class="lang-zh">
+              网站模板改编自 <a href="https://github.com/nerfies/nerfies.github.io">Nerfies</a>。
+            </span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

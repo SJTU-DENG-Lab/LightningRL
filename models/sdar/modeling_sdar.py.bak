@@ -376,8 +376,8 @@ class SDARAttention(nn.Module):
             hidden_states).view(hidden_shape)).transpose(1, 2)
         value_states = self.v_proj(hidden_states).view(
             hidden_shape).transpose(1, 2)
-        
-        
+
+
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(
@@ -671,8 +671,8 @@ class SDARModel(SDARPreTrainedModel):
         r"""
         Args:
             store_kv (`bool`, *optional*):
-                Whether to store key and value states in the cache. If `True`, the key and value states will be 
-                stored in `past_key_values`. If `False` and `past_key_values` exists, only retrieves cached states 
+                Whether to store key and value states in the cache. If `True`, the key and value states will be
+                stored in `past_key_values`. If `False` and `past_key_values` exists, only retrieves cached states
                 without updating the cache.
         """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions

@@ -1,18 +1,17 @@
+import torch
 from accelerate.logging import get_logger
+
 logger = get_logger(__name__, log_level="INFO")
 
 
-import torch
-class UniversalPrompting():
-    def __init__(self, text_tokenizer,
-                 max_prompt_len=8000, max_gen_length=377, ignore_id=-100):
+class UniversalPrompting:
+    def __init__(self, text_tokenizer, max_prompt_len=8000, max_gen_length=377, ignore_id=-100):
         """
         :param text_tokenizer: original text tokenizer
         """
         self.text_tokenizer = text_tokenizer
         self.max_gen_length = max_gen_length
         self.max_prompt_len = max_prompt_len
-
 
     # language modeling
     def lm_prompt(self, text_ids_pairs):
@@ -22,7 +21,7 @@ class UniversalPrompting():
         # Compute true response length (excluding padding)
         response_lengths = (responses_list != pad_id).sum(dim=1)
         max_resp_len = min(response_lengths.max().item(), self.max_gen_length)
-        
+
         max_seq_len = prompts_list.shape[1] + max_resp_len
 
         sequence_ids = []
@@ -63,45 +62,29 @@ class UniversalPrompting():
 
         return input_ids, label_ids, int(prompts_list.shape[1])
 
-        
-    
-
     def mask_prompt(self):
         pass
 
     def __call__(self, input):
         prompts, responses = input
 
-        enc = self.text_tokenizer(
-            prompts,
-            padding=False,
-            truncation=False,
-            return_length=True
-        )
+        enc = self.text_tokenizer(prompts, padding=False, truncation=False, return_length=True)
         lengths = enc["length"]
         # 2) Filter to indices whose length <= max_len
         keep_indices = [i for i, L in enumerate(lengths) if L <= self.max_prompt_len]
         drop_num = len(prompts) - len(keep_indices)
-        
-        prompts  = [prompts[i]  for i in keep_indices]
+
+        prompts = [prompts[i] for i in keep_indices]
         responses = [responses[i] for i in keep_indices]
 
         # Tokenize raw text to token ids
-        prompt_ids = self.text_tokenizer(
-            prompts,
-            padding=True,
-            return_tensors="pt",
-            padding_side = "left"
-        )['input_ids']
-        response_ids = self.text_tokenizer(
-            responses,
-            padding=True,
-            return_tensors="pt",
-            padding_side = "right"
-        )['input_ids']
+        prompt_ids = self.text_tokenizer(prompts, padding=True, return_tensors="pt", padding_side="left")["input_ids"]
+        response_ids = self.text_tokenizer(responses, padding=True, return_tensors="pt", padding_side="right")[
+            "input_ids"
+        ]
         input_ids_lm, labels_lm, start_pos = self.lm_prompt((prompt_ids, response_ids))
         return input_ids_lm, labels_lm, int(start_pos), drop_num, keep_indices
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass

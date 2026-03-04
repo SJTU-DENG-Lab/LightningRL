@@ -1,26 +1,24 @@
+import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
+
 import math_utils
 import nest_asyncio
-from scipy.stats import norm
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
+from omegaconf import OmegaConf
 from termcolor import cprint
 
-from omegaconf import DictConfig, ListConfig, OmegaConf
+
 def get_config():
     cli_conf = OmegaConf.from_cli()
     yaml_conf = OmegaConf.load(cli_conf.config)
     conf = OmegaConf.merge(yaml_conf, cli_conf)
     return conf
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     config = get_config()
 
     project_name = config.experiment.project
-    
-    
-    
 
     dataset = config.dataset.eval_dataset
     pretrained_model = config.model
@@ -28,7 +26,7 @@ if __name__ == "__main__":
     outputs_name = "eval-" + pretrained_model.replace("/", ".") + "-" + dataset
     file_name = "../" + project_name + "/temp_data/outputs-" + outputs_name + ".json"
 
-    with open(file_name, 'r') as f:
+    with open(file_name, "r") as f:
         json_content = json.load(f)
 
     # Handle both old format (list) and new format (dict with metadata)
@@ -47,7 +45,6 @@ if __name__ == "__main__":
     num_forwards_list = []
 
     for i in range(len(data)):
-
         response_length_list = response_length_list + data[i]["response_length"]
         index_list = index_list + [i] * len(data[i]["extracted_output"])
         extracted_output_list = extracted_output_list + data[i]["extracted_output"]
@@ -66,10 +63,7 @@ if __name__ == "__main__":
                 ground_truth = answer_str
             ground_truth_list = ground_truth_list + [ground_truth] * len(data[i]["extracted_output"])
 
-    
-
     if config.dataset.data_type == "math":
-
         nest_asyncio.apply()
 
         async def get_correctness():
@@ -79,13 +73,11 @@ if __name__ == "__main__":
                 tasks.append(math_utils.is_equal(extracted_output_list[i], ground_truth_list[i], executor))
             results = await asyncio.gather(*tasks)
             return results
-    
+
         correctness_list = asyncio.run(get_correctness())
         for i in range(len(index_list)):
             index_i = index_list[i]
             data[index_i]["correctness"].append(correctness_list[i])
-
-
 
     def z_score_normalize(lst):
         mean = sum(lst) / len(lst)
@@ -94,22 +86,16 @@ if __name__ == "__main__":
             return [0 for x in lst]
         return [(x - mean) / std for x in lst]
 
-
-
-
-
-
     def set_last_t(lst: list, t: int) -> None:
         new_lst = lst.copy()
         new_val = max(lst) + 1
         new_lst[-t:] = [new_val] * t
         return new_lst
 
-
     if config.dataset.data_type == "math":
-        acc = sum(correctness_list)/len(correctness_list)
+        acc = sum(correctness_list) / len(correctness_list)
     else:
-        num_task   = 0
+        num_task = 0
         num_correct_task = 0
         for x in data:
             for y in x["correctness"]:
@@ -120,13 +106,12 @@ if __name__ == "__main__":
     if config.rollout.output_unmasking_history == False:
         for i in range(len(data)):
             data[i]["step_map"] = []
-    
+
     import os
-    
+
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
     with open(file_name, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-
 
     outputs_result_name = "../" + project_name + "/results/results-" + outputs_name + ".txt"
     os.makedirs(os.path.dirname(outputs_result_name), exist_ok=True)
@@ -135,9 +120,8 @@ if __name__ == "__main__":
         def save_and_print(text):
             cprint("\n\n\n" + text, color="green")
             f.write(text + "\n")
-        
-        
-        avg_len = sum(response_length_list)/len(response_length_list)
+
+        avg_len = sum(response_length_list) / len(response_length_list)
 
         # Calculate TPS and TPF metrics
         if total_generation_time is not None and len(num_forwards_list) > 0:
@@ -150,8 +134,8 @@ if __name__ == "__main__":
             avg_forwards = total_forwards / len(num_forwards_list)
 
             save_and_print(f"acc: {acc}\navg length: {avg_len}")
-            save_and_print(f"\n{'='*50}")
-            save_and_print(f"Performance Metrics:")
+            save_and_print(f"\n{'=' * 50}")
+            save_and_print("Performance Metrics:")
             save_and_print(f"  Total Tokens: {total_tokens}")
             save_and_print(f"  Total Generation Time: {total_generation_time:.2f}s")
             save_and_print(f"  Total Forwards: {total_forwards}")
@@ -159,10 +143,11 @@ if __name__ == "__main__":
             save_and_print(f"  TPF (Tokens/Forward): {tpf:.2f}")
             save_and_print(f"  Avg Response Length: {avg_len:.2f}")
             save_and_print(f"  Avg Forwards per Sample: {avg_forwards:.2f}")
-            save_and_print(f"{'='*50}")
+            save_and_print(f"{'=' * 50}")
 
             # Save performance stats to JSON
             import time as time_module
+
             stats_file = f"../{project_name}/results/performance_stats-{int(time_module.time())}.json"
             performance_stats = {
                 "timestamp": time_module.time(),
@@ -177,11 +162,13 @@ if __name__ == "__main__":
                 "tpf": float(tpf),
                 "mean_response_length": float(avg_len),
                 "mean_forwards_per_sample": float(avg_forwards),
-                "accuracy": float(acc)
+                "accuracy": float(acc),
             }
             with open(stats_file, "w") as stats_f:
                 json.dump(performance_stats, stats_f, indent=2)
             save_and_print(f"\nPerformance stats saved to: {stats_file}")
         else:
             save_and_print(f"acc: {acc}\navg length: {avg_len}")
-            save_and_print(f"\nWarning: total_generation_time or num_forwards data not available for TPS/TPF calculation")
+            save_and_print(
+                "\nWarning: total_generation_time or num_forwards data not available for TPS/TPF calculation"
+            )

@@ -36,4 +36,3 @@ rollout:
     start_with_think: False # if not reasoning model, set to False, otherwise True
     output_unmasking_history: True
     do_sample: false  # Use greedy decoding during evaluation
-

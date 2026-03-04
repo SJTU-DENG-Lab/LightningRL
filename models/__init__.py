@@ -1,2 +1,2 @@
 from .sampling import *
-from .sdar import SDARModel, SDARForCausalLM, SDARConfig
+from .sdar import SDARConfig, SDARForCausalLM, SDARModel
