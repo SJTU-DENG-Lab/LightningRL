@@ -3,7 +3,7 @@ name = "lightning-rl"
 version = "0.1.0"
 description = "LightningRL: Breaking the Accuracy-Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12"
 dependencies = [
     "torch==2.8.0",
     "torchvision==0.23.0",
@@ -187,14 +187,11 @@ indent-width = 4
 extend-exclude = ["sample/lmdeploy", ".venv", "MultiBD"]
 
 [tool.ruff.lint]
-# E402: 允许 import 不在文件顶部（ML 脚本常有 setup 代码在 import 前）
-# C901: 复杂度过高, E501: 行过长, E741: 歧义变量名, W605: 无效转义, C408: 不必要的 lambda
 ignore = ["C901", "E501", "E741", "W605", "C408", "E402", "C416", "F841", "F401", "E722", "E712"]
 select = ["C", "E", "F", "I", "W"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401", "F403", "F811"]
-# try/except 中用于检测可用性的 import
 "models/sdar/modeling_sdar.py" = ["F401"]
 "train/init_value_model.py" = ["F401"]
 "train/train_policy.py" = ["F401"]
