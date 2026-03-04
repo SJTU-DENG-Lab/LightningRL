@@ -1,2 +1,2 @@
 #!/bin/bash
-python rl.py config=configs/rl.yaml
+python rl.py config=configs/lightningrl.yaml
