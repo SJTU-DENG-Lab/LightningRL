@@ -1,0 +1,129 @@
+wandb:
+  entity: null
+  resume: auto
+  run_id: jbbor3do
+experiment:
+  project: lightningrl
+  function: train
+  start_from_scratch: true
+  total_step: 80
+  save_every: 10
+  eval_every: 1
+  train_value_every: 1
+  current_epoch: 1
+  deepspeed_file: 1_node_8_gpus_deepspeed_zero1.yaml
+  num_node: 1
+  node_index: 0
+  gpu_ids: 0,1,2,3,4,5,6,7
+  logging_dir: lightningrl/logs
+model:
+  pretrained_model: /root/data/ckpts/JetLM/SDAR-8B-Chat-b32
+  value_base_model: absolute path of your model
+  optimized_name: optimized
+  optimized_value_name: optimized_value
+  model_base: sdar
+  use_fused_diffusion_loss: true
+  fused_loss_num_chunks: 1
+dataset:
+  train_dataset: GSM8K_train
+  optimization_data: rl_data
+  data_type: math
+rollout:
+  tensor_parallel_size: 1
+  cache_max_entry_count: 0.7
+  max_active: 512
+  num_task_per_step: 128
+  num_response_per_task: 32
+  temperature: 1.0
+  max_token: 8192
+  block_size: 32
+  denoising_steps_per_block: 32
+  top_p: 1.0
+  top_k: 0
+  remasking_strategy: low_confidence_dynamic
+  dynamic_threshold: 0.9
+  start_with_think: false
+  sequential_sampling: true
+  data_filter_resample_enabled: false
+  sampling_multiplier: 1
+  do_sample: true
+execute:
+  num_chunk: 32
+training:
+  use_value_model: false
+  value_pretrain_enabled: false
+  value_pretrain_lam: 1.0
+  value_pretrain_ev_threshold: 0.3
+  value_pretrain_bias_threshold: 0.1
+  value_pretrain_corr_threshold: 0.5
+  value_pretrain_steps: 10
+  gradient_checkpointing_enable: true
+  gradient_accumulation_steps: 8
+  batch_size_value: 16
+  batch_size_policy: 8
+  batch_size_value_inference: 32
+  batch_size_policy_inference: 16
+  batch_size_ref_logp: 16
+  use_torch_compile_ref: false
+  mixed_precision: fp16
+  enable_tf32: true
+  seed: 10086
+  num_train_epochs: 1
+  max_grad_norm: 1.0
+  block_size: 4
+  shrink: 1
+  post_num: 0
+  max_gen_length: 8192
+  max_prompt_len: 1024
+  eps: 0.2
+  eps_high: 0.2
+  gam: 1.0
+  lam: 1.0
+  kl_estimator: k3
+  nll_loss_weight: 0.1
+  kl_beta: 0.01
+  policy_reduction_mode: sequence
+  kl_reduction_mode: token
+  nll_reduction_mode: token
+reward:
+  tpf_coefficient: 1
+  filter_tpf_threshold: 0.01
+  filter_all_wrong: true
+  tpf_norm_mode: z_score
+  acc_norm: true
+  adv_norm_mode: batch
+optimizer:
+  name: adamw
+  params:
+    policy_learning_rate: 1.0e-06
+    value_learning_rate: 2.0e-06
+    scale_lr: false
+    beta1: 0.9
+    beta2: 0.999
+    weight_decay: 0.0
+    epsilon: 1.0e-08
+lr_scheduler:
+  scheduler: constant_with_warmup
+  params:
+    learning_rate: ${optimizer.params.policy_learning_rate}
+    warmup_steps: 10
+    min_lr_scale: 1.0
+evaluation:
+  eval_dataset: GSM8K
+  data_type: math
+  tensor_parallel_size: 1
+  max_active: 512
+  num_response_per_task: 16
+  temperature: 1.0
+  max_token: 8192
+  block_size: 32
+  denoising_steps_per_block: 32
+  top_p: 1.0
+  top_k:
+  - 0
+  remasking_strategy:
+  - low_confidence_dynamic
+  dynamic_threshold: 0.9
+  start_with_think: false
+  do_sample: false
+config: configs/lightningrl.yaml

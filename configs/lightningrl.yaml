@@ -12,7 +12,7 @@ experiment:
     eval_every: 1
     train_value_every: 1
     current_epoch: 1
-    deepspeed_file: "1_node_8_gpus_deepspeed_zero3.yaml"
+    deepspeed_file: "1_node_8_gpus_deepspeed_zero1.yaml"
     num_node: 1
     node_index: 0
     gpu_ids: "0,1,2,3,4,5,6,7"  # specify which GPUs to use, e.g., "0,1,2,3" or "4,5,6,7"

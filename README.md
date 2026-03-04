@@ -135,6 +135,41 @@ Or you can simply download all the data needed using the following command:
 scripts/download_data.sh
 ```
 
+### Configuration Guide for `lightningrl.yaml`
+
+To ensure a smooth training process, please pay close attention to the following configuration requirements in your `lightningrl.yaml` file:
+
+#### 1. Experiment Project Name
+The `project` field within the `experiment` block must match the filename of your configuration file:
+
+```yaml
+experiment:
+    project: "lightningrl"  # Should match the config filename (e.g., lightningrl.yaml)
+```
+
+#### 2. Model Paths
+The `model` block requires absolute paths for model checkpoints to ensure proper loading:
+
+*   **`pretrained_model`**: Must be set to the **absolute path** of your pre-trained model.
+*   **`value_base_model`**: This field is associated with `use_value_model` in the `training` block. If `use_value_model` is set to `True`, this field must be populated. 
+    *   *Note:* Currently, the value model does not actively participate in training; it is provided as an optional component to facilitate experimentation and reproducibility.
+
+```yaml
+model:
+    pretrained_model: "/absolute/path/to/your/pretrained_model"
+    value_base_model: "/absolute/path/to/your/value_base_model"
+```
+
+#### 3. Training Controls
+Ensure your training flags are configured correctly:
+
+```yaml
+training:
+    # Set to True if using a value model for exploration; 
+    # otherwise, keep as False to skip value model loading.
+    use_value_model: False 
+```
+
 ## Acknowledgement
 
 We would like to express our gratitude to the following works for providing important foundations and inspiration:
