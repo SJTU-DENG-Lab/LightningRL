@@ -371,27 +371,15 @@ def main():
         logger.info("Loading reference model for KL divergence")
         logger.info("=" * 80)
 
-        if config.experiment.current_epoch <= 1:
-            # First epoch: clone the training model as reference
-            logger.info("First epoch: cloning training model as reference model")
-            import copy
-
-            ref_model = copy.deepcopy(model)
-            ref_model.eval()
-            for param in ref_model.parameters():
-                param.requires_grad = False
-            logger.info("Reference model cloned and frozen")
-        else:
-            # Subsequent epochs: load from SFT model path
-            ref_model_path = config.model.pretrained_model
-            logger.info(f"Loading reference model from {ref_model_path}")
-            ref_model = SDARForCausalLM.from_pretrained(ref_model_path, trust_remote_code=True, torch_dtype="auto")
-            if hasattr(ref_model, "config"):
-                ref_model.config.fuse_cross_entropy = False
-            ref_model.eval()
-            for param in ref_model.parameters():
-                param.requires_grad = False
-            logger.info("Reference model loaded and frozen")
+        ref_model_path = config.model.pretrained_model
+        logger.info(f"Loading reference model from {ref_model_path}")
+        ref_model = SDARForCausalLM.from_pretrained(ref_model_path, trust_remote_code=True, torch_dtype="auto")
+        if hasattr(ref_model, "config"):
+            ref_model.config.fuse_cross_entropy = False
+        ref_model.eval()
+        for param in ref_model.parameters():
+            param.requires_grad = False
+        logger.info("Reference model loaded and frozen")
 
         # Keep ref_model on CPU to save GPU memory
         ref_model = ref_model.cpu()
