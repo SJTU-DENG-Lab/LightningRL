@@ -5,9 +5,8 @@ experiment:
     gpu_ids: "0,1,2,3,4,5,6,7"  # specify which GPUs to use, e.g., "0" or "0,1"
 
 
-
-
-model: "absolute path of your model" # absolute path of your model
+# model: "absolute path of your model" # absolute path of your model
+model: /root/data/ckpts/JetLM/SDAR-8B-Chat-b32/
 model_base: "sdar"
 
 
