@@ -19,6 +19,8 @@ build/
 */temp_data/
 */results/
 metrics/
+uv.lock
+sample/lightningrl/temp_data/data_cursor.txt
 
 # Checkpoints and model weights
 *.pt
@@ -39,9 +41,6 @@ venv/
 .vscode/
 .idea/
 
-# Soft Link
+# Soft Links
 MultiBD
 sglang
-
-# Temp data
-uv.lock

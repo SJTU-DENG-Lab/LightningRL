@@ -3,7 +3,6 @@ wandb:
   resume: 'auto'
 
 
-
 experiment:
     project: "lightningrl"  # need to be same of this file name
     function: "train" # no need to change
@@ -19,8 +18,10 @@ experiment:
     gpu_ids: "0,1,2,3,4,5,6,7"  # specify which GPUs to use, e.g., "0,1,2,3" or "4,5,6,7"
 
 model:
-    pretrained_model: "absolute path of your model" # absolute path of your model
-    value_base_model: "absolute path of your model" # absolute path of your model
+    # pretrained_model: "absolute path of your model" # absolute path of your model
+    # value_base_model: "absolute path of your model" # absolute path of your model
+    pretrained_model: /root/data/ckpts/JetLM/SDAR-8B-Chat-b32
+    value_base_model: "absolute path of your model"
     optimized_name: "optimized" # the output name for your optimized policy model, will be saved under {project}/ckpt
     optimized_value_name: "optimized_value" # the output name for your optimized value model, will be saved under {project}/ckpt
     model_base: "sdar"

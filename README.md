@@ -50,7 +50,7 @@ We propose **LightningRL**, a reinforcement learning framework that breaks the a
 - **Breaking the Trade-off**: LightningRL achieves **7.32** average TPF and **497.9** AUP, simultaneously improving both speed and accuracy of block-wise dLLMs
 - **Three Key Innovations**: Per-reward decoupled normalization, token-level NLL loss, and TPF-aware filtering work synergistically to stabilize multi-objective RL training
 - **Strong Generalization**: Consistent improvements across math (GSM8K, MATH500) and code (MBPP, HumanEval) benchmarks
-- **Practical Speed**: **336.03** TPS on H100 GPUs, 3.2x faster than the SDAR baseline
+- **Practical Speed**: **336.03** TPS on H100 GPUs, 3.2x faster than the SDAR baseline (deployed using SGLang)
 
 ## Method
 
@@ -96,26 +96,24 @@ LightningRL achieves **336.03** TPS on a single H100 GPU, **3.2x** faster than t
 
 ```bash
 git clone https://github.com/SJTU-DENG-Lab/LightningRL.git
+cd LightningRL
 
-conda create --name lightningrl python=3.10
-conda activate lightningrl
-
-pip install torch==2.6.0
-pip install -r requirements.txt
+uv sync
+source .venv/bin/activate
 ```
 
-### Training
+### RL Training
 
-LightningRL post-training on SDAR-8B:
+LightningRL post-training on SDAR-8B-b32:
 
 ```bash
-python train.py config=configs/rl.yaml
+scripts/train_rl.sh
 ```
 
 ### Evaluation
 
 ```bash
-python eval.py config=configs/eval.yaml
+scripts/eval.sh
 ```
 
 ## ⚙️ Data
@@ -131,6 +129,12 @@ cd ..
 
 After downloading the data, select (or create) a config file in `./configs` to specify the dataset paths and training settings.
 
+Or you can simply download all the data needed using the following command:
+
+```bash
+scripts/download_data.sh
+```
+
 ## Acknowledgement
 
 We would like to express our gratitude to the following works for providing important foundations and inspiration:
@@ -139,9 +143,10 @@ We would like to express our gratitude to the following works for providing impo
 
 ## Contact
 
-For issues or inquiries:
+For any issues or inquiries, please feel free to open an issue in this repository. For further questions, you can contact us via email:
 
-- **Yanzhe Hu**, Huazhong University of Science and Technology ([yanzhehu@hust.edu.cn](mailto:yanzhehu@hust.edu.cn))
+- **Yanzhe Hu**: yanzhehu@hust.edu.cn
+- Yijie Jin: drewjin0827@gmail.com
 
 ## Citation
 
