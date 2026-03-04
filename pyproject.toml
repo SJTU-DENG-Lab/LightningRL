@@ -177,6 +177,10 @@ build-backend = "hatchling.build"
 dev-dependencies = []
 no-build-isolation-package = ["flash-attn"]
 
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+
 [tool.uv.sources]
 torch = { index = "pytorch" }
 torchvision = { index = "pytorch" }
@@ -185,8 +189,3 @@ flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/down
 [[tool.uv.dependency-metadata]]
 name = "flash-attn"
 requires-dist = ["torch"]
-
-[[tool.uv.index]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu124"
-explicit = true
