@@ -223,7 +223,7 @@ if __name__ == "__main__":
             f"--machine_rank 0 "
             f"--main_process_ip 127.0.0.1 "
             f"--main_process_port 8888 "
-            f"--config_file accelerate_configs/{config.experiment.deepspeed_file}.yaml "
+            f"--config_file accelerate_configs/{config.experiment.deepspeed_file} "
             f"train/{script_name} "
             f"config=configs/{project_name}.yaml "
             f"experiment.current_epoch={i} ",
