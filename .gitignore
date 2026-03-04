@@ -38,3 +38,6 @@ venv/
 # IDEs
 .vscode/
 .idea/
+
+# Soft Link
+MultiBD
