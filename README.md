@@ -177,7 +177,7 @@ training:
 
 We would like to express our gratitude to the following works for providing important foundations and inspiration:
 
-[SDAR](https://github.com/JetAstra/SDAR), [dLLM-RL](https://github.com/Gen-Verse/dLLM-RL), [Block Diffusion](https://arxiv.org/abs/2503.09573), [DiRL](https://github.com/OpenMOSS/DiRL), [LMDeploy](https://github.com/InternLM/lmdeploy),.
+[SDAR](https://github.com/JetAstra/SDAR), [dLLM-RL](https://github.com/Gen-Verse/dLLM-RL), [Block Diffusion](https://arxiv.org/abs/2503.09573), [DiRL](https://github.com/OpenMOSS/DiRL), [LMDeploy](https://github.com/InternLM/lmdeploy).
 
 ## Contact
 
