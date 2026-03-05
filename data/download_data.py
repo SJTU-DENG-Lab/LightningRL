@@ -1,14 +1,28 @@
-from huggingface_hub import snapshot_download
+import argparse
+from huggingface_hub import hf_hub_download
+import shutil
 
-dataset_id = "dataset"
-local_dir = "./PrimeIntellect"
 
-snapshot_download(
-    repo_id=dataset_id,
-    repo_type="dataset",
-    local_dir=local_dir,
-    local_dir_use_symlinks=False,  # Download actual files
-    resume_download=True,  # Support resumable downloads
+parser = argparse.ArgumentParser(description="Download a dataset from HF hub")
+parser.add_argument(
+    "--dataset",
+    choices=["PrimeIntellect","MATH_train","GSM8K_train","MATH500","GSM8K","MBPP","HumanEval"],
+    required=True,
+    help="Which dataset to download"
 )
+args = parser.parse_args()
+dataset = args.dataset
 
-print(f"Dataset downloaded to: {local_dir}")
+
+if dataset == "MATH_train" or dataset == "PrimeIntellect" or dataset == "GSM8K_train":
+    split = "train"
+else:
+    split = "test"
+
+
+cached_path = hf_hub_download(
+    repo_id=f"SJTU-DENG-Lab/{dataset}",
+    repo_type="dataset",
+    filename=f"{split}/{dataset}.json"
+)
+shutil.copy(cached_path, f"./{dataset}.json")
