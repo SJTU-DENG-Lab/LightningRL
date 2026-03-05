@@ -20,17 +20,20 @@
 
 </div>
 
-<p align="center">  
-  <a href="#">
+<p align="center">
+  <a href="https://sjtu-deng-lab.github.io/LightningRL">
     <img src="https://img.shields.io/badge/Website-LightningRL-purple.svg" alt="ICML 2026"/>
   </a>
   <a href="#">
     <img src="https://img.shields.io/badge/arXiv-coming%20soon-b31b1b.svg" alt="Paper on arXiv"/>
   </a>
-  <a href="#">
+  <a href="https://github.com/SJTU-DENG-Lab/LightningRL/blob/main/paper/LightningRL.pdf">
+    <img src="https://img.shields.io/badge/Paper-PDF-2b6cb0.svg?logo=adobeacrobatreader&logoColor=white" alt="Paper PDF"/>
+  </a>
+  <a href="https://github.com/SJTU-DENG-Lab/LightningRL">
     <img src="https://img.shields.io/badge/GitHub-Code-black.svg?logo=github" alt="GitHub Code"/>
   </a>
-  <a href="#">
+  <a href="https://huggingface.co/collections/SJTU-DENG-Lab/lightingrl-series">
     <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-yellow.svg" alt="Hugging Face Model"/>
   </a>
 </p>
@@ -151,7 +154,7 @@ experiment:
 The `model` block requires absolute paths for model checkpoints to ensure proper loading:
 
 *   **`pretrained_model`**: Must be set to the **absolute path** of your pre-trained model.
-*   **`value_base_model`**: This field is associated with `use_value_model` in the `training` block. If `use_value_model` is set to `True`, this field must be populated. 
+*   **`value_base_model`**: This field is associated with `use_value_model` in the `training` block. If `use_value_model` is set to `True`, this field must be populated.
     *   *Note:* Currently, the value model does not actively participate in training; it is provided as an optional component to facilitate experimentation and reproducibility.
 
 ```yaml
@@ -165,16 +168,16 @@ Ensure your training flags are configured correctly:
 
 ```yaml
 training:
-    # Set to True if using a value model for exploration; 
+    # Set to True if using a value model for exploration;
     # otherwise, keep as False to skip value model loading.
-    use_value_model: False 
+    use_value_model: False
 ```
 
 ## Acknowledgement
 
 We would like to express our gratitude to the following works for providing important foundations and inspiration:
 
-[SDAR](https://github.com/JetAstra/SDAR), [dLLM-RL](https://github.com/Gen-Verse/dLLM-RL), [Block Diffusion](https://arxiv.org/abs/2503.09573), [DiRL](https://github.com/OpenMOSS/DiRL), [lmdeploy](https://github.com/InternLM/lmdeploy),.
+[SDAR](https://github.com/JetAstra/SDAR), [dLLM-RL](https://github.com/Gen-Verse/dLLM-RL), [Block Diffusion](https://arxiv.org/abs/2503.09573), [DiRL](https://github.com/OpenMOSS/DiRL), [LMDeploy](https://github.com/InternLM/lmdeploy),.
 
 ## Contact
 

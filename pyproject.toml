@@ -3,7 +3,7 @@ name = "lightning-rl"
 version = "0.1.0"
 description = "LightningRL: Breaking the Accuracy-Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning"
 readme = "README.md"
-requires-python = "==3.12"
+requires-python = "==3.12.*"
 dependencies = [
     "torch==2.8.0",
     "torchvision==0.23.0",
