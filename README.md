@@ -143,6 +143,7 @@ scripts/download_data.sh
 To ensure a smooth training process, please pay close attention to the following configuration requirements in your `lightningrl.yaml` file:
 
 #### 1. Experiment Project Name
+
 The `project` field within the `experiment` block must match the filename of your configuration file:
 
 ```yaml
@@ -151,11 +152,12 @@ experiment:
 ```
 
 #### 2. Model Paths
+
 The `model` block requires absolute paths for model checkpoints to ensure proper loading:
 
-*   **`pretrained_model`**: Must be set to the **absolute path** of your pre-trained model.
-*   **`value_base_model`**: This field is associated with `use_value_model` in the `training` block. If `use_value_model` is set to `True`, this field must be populated.
-    *   *Note:* Currently, the value model does not actively participate in training; it is provided as an optional component to facilitate experimentation and reproducibility.
+* **`pretrained_model`**: Must be set to the **absolute path** of your pre-trained model.
+* **`value_base_model`**: This field is associated with `use_value_model` in the `training` block. If `use_value_model` is set to `True`, this field must be populated.
+  * *Note:* Currently, the value model does not actively participate in training; it is provided as an optional component to facilitate experimentation and reproducibility.
 
 ```yaml
 model:
@@ -164,6 +166,7 @@ model:
 ```
 
 #### 3. Training Controls
+
 Ensure your training flags are configured correctly:
 
 ```yaml
@@ -191,10 +194,11 @@ For any issues or inquiries, please feel free to open an issue in this repositor
 If you find our work helpful, please consider citing:
 
 ```bibtex
-@inproceedings{hu2026lightningrl,
+@article{hu2026lightningrl,
   title={LightningRL: Breaking the Accuracy--Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning},
   author={Hu, Yanzhe and Jin, Yijie and Liu, Pengfei and Yu, Kai and Deng, Zhijie},
-  booktitle={Proceedings of the International Conference on Machine Learning (ICML)},
-  year={2026}
+  journal={arXiv preprint},
+  year={2026},
+  note={Coming soon}
 }
 ```
