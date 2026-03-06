@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - "page/**"
+      - "paper/**"
   workflow_dispatch:
 
 jobs:
@@ -16,6 +17,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Copy paper to page
+        run: cp -r paper page/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
