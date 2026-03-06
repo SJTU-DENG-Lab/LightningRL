@@ -27,7 +27,7 @@
   <a href="#">
     <img src="https://img.shields.io/badge/arXiv-coming%20soon-b31b1b.svg" alt="Paper on arXiv"/>
   </a>
-  <a href="https://github.com/SJTU-DENG-Lab/LightningRL/blob/main/paper/LightningRL.pdf">
+  <a href="https://sjtu-deng-lab.github.io/LightningRL/paper/LightningRL.pdf">
     <img src="https://img.shields.io/badge/Paper-PDF-2b6cb0.svg?logo=adobeacrobatreader&logoColor=white" alt="Paper PDF"/>
   </a>
   <a href="https://github.com/SJTU-DENG-Lab/LightningRL">
