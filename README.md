@@ -24,11 +24,8 @@
   <a href="https://sjtu-deng-lab.github.io/LightningRL">
     <img src="https://img.shields.io/badge/Website-LightningRL-purple.svg" alt="ICML 2026"/>
   </a>
-  <a href="#">
-    <img src="https://img.shields.io/badge/arXiv-coming%20soon-b31b1b.svg" alt="Paper on arXiv"/>
-  </a>
-  <a href="https://sjtu-deng-lab.github.io/LightningRL/paper/LightningRL.pdf">
-    <img src="https://img.shields.io/badge/Paper-PDF-2b6cb0.svg?logo=adobeacrobatreader&logoColor=white" alt="Paper PDF"/>
+  <a href="https://arxiv.org/pdf/2603.13319">
+    <img src="https://img.shields.io/badge/arXiv-Paper-b31b1b.svg" alt="Paper on arXiv"/>
   </a>
   <a href="https://github.com/SJTU-DENG-Lab/LightningRL">
     <img src="https://img.shields.io/badge/GitHub-Code-black.svg?logo=github" alt="GitHub Code"/>
@@ -194,11 +191,13 @@ For any issues or inquiries, please feel free to open an issue in this repositor
 If you find our work helpful, please consider citing:
 
 ```bibtex
-@article{hu2026lightningrl,
-  title={LightningRL: Breaking the Accuracy--Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning},
-  author={Hu, Yanzhe and Jin, Yijie and Liu, Pengfei and Yu, Kai and Deng, Zhijie},
-  journal={arXiv preprint},
-  year={2026},
-  note={Coming soon}
+@misc{hu2026lightningrlbreakingaccuracyparallelismtradeoff,
+      title={LightningRL: Breaking the Accuracy-Parallelism Trade-off of Block-wise dLLMs via Reinforcement Learning}, 
+      author={Yanzhe Hu and Yijie Jin and Pengfei Liu and Kai Yu and Zhijie Deng},
+      year={2026},
+      eprint={2603.13319},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2603.13319}, 
 }
 ```
