@@ -1,0 +1,40 @@
+[project]
+name = "lmdeploy"
+version = "0.1.0"
+description = "A deployment tool for language models."
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+license = "MIT"
+dependencies = []
+
+# 声明动态字段（移除 readme）
+dynamic = ["scripts", "optional-dependencies"]
+
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research"
+]
+
+[scripts]
+lmdeploy = "lmdeploy.cli:run"
+
+[optional-dependencies]
+all = []
+lite = []
+serve = []
+
+[build-system]
+requires = [
+    "cmake_build_extension",
+    "setuptools>=42",
+    "setuptools_scm[toml]>=6.0"
+]
+build-backend = "setuptools.build_meta"

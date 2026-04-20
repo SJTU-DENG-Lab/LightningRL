@@ -6,9 +6,12 @@ experiment:
 
 
 # model: "absolute path of your model" # absolute path of your model
-model: /root/data/ckpts/JetLM/SDAR-8B-Chat-b32/
-model_base: "sdar"
 
+model: /root/data/ckpts/JetLM/SDAR-8B-Chat
+# model: /root/workspace/jyj/workspaces/MultiBD/multi_bd_train/multibd_ckpt/sdar_1dot7B_bd_sft_glm/checkpoints/test
+# model: /root/workspace/jyj/workspaces/MultiBD/multi_bd_train/multibd_ckpt/sdar_1dot7B_bd_sft/checkpoints/test
+# model: /root/workspace/jyj/workspaces/MultiBD/multi_bd_train/multibd_ckpt/sdar_sft_test/checkpoint-150
+model_base: "sdar"
 
 # dataset you want to eval on, you need to download first, you can also modify your own dataset, see instructions in ./data
 dataset:
@@ -23,11 +26,11 @@ rollout:
     tensor_parallel_size: 1 # set to 1 by default, if oom, try reduce max_active first, if still oom, set tensor_parallel_size to 8
     cache_max_entry_count: 0.7
     max_active: 512
-    num_response_per_task: 32
+    num_response_per_task: 1
     temperature: 1.0
     max_token: 8192 # max generation token num
-    block_size: 32
-    denoising_steps_per_block: 32
+    block_size: 4
+    denoising_steps_per_block: 4
     top_p: 1.0
     top_k: 0
     remasking_strategy: "low_confidence_dynamic" #"low_confidence_static""low_confidence_dynamic"
