@@ -3,6 +3,7 @@ import json
 import math
 import multiprocessing as mp
 import os
+import signal
 import sys
 import textwrap
 import time
@@ -20,24 +21,71 @@ def get_config():
 from concurrent.futures import as_completed
 
 
-def _run_many_pipe(snippet: str, tests: list[str], conn):
-    results = []
+def _enter_untrusted_process_group():
+    if os.name != "posix" or not hasattr(os, "setsid"):
+        return
     try:
+        os.setsid()
+    except Exception:
+        pass
+
+
+def _signal_process_group(pid: int | None, sig: int) -> bool:
+    if os.name != "posix" or pid is None:
+        return False
+    try:
+        os.killpg(pid, sig)
+        return True
+    except Exception:
+        return False
+
+
+def _cleanup_process_group(proc, grace: float = 0.2):
+    group_signaled = _signal_process_group(proc.pid, signal.SIGTERM)
+    if not group_signaled and proc.is_alive():
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+    try:
+        proc.join(timeout=grace)
+    except Exception:
+        pass
+
+    if proc.is_alive():
+        if not _signal_process_group(proc.pid, signal.SIGKILL):
+            try:
+                proc.kill()
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        try:
+            proc.join(timeout=grace)
+        except Exception:
+            pass
+    elif group_signaled:
+        _signal_process_group(proc.pid, signal.SIGKILL)
+
+
+def _run_test_pipe(snippet: str, test_stmt: str, conn):
+    try:
+        _enter_untrusted_process_group()
         ns = {}
         exec(textwrap.dedent(snippet), ns, ns)
-        for stmt in tests:
-            try:
-                exec(stmt, ns, ns)
-                results.append(True)
-            except SystemExit:
-                results.append(True)
-            except Exception:
-                results.append(False)
-        conn.send(results)
+        try:
+            exec(test_stmt, ns, ns)
+            conn.send(True)
+        except SystemExit:
+            conn.send(True)
+        except Exception:
+            conn.send(False)
     except SystemExit:
-        conn.send([True] * len(tests))
+        conn.send(True)
     except Exception:
-        conn.send([False] * len(tests))
+        conn.send(False)
     finally:
         try:
             conn.close()
@@ -45,13 +93,13 @@ def _run_many_pipe(snippet: str, tests: list[str], conn):
             pass
 
 
-def _check_snippet_many(snippet: str, tests: list[str], t_limit: int, spawn_slack: float = 2.0) -> list[bool]:
+def _check_snippet_one(snippet: str, test_stmt: str, t_limit: int, spawn_slack: float = 2.0) -> bool:
     import multiprocessing as mp
     import time
 
     ctx = mp.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
-    p = ctx.Process(target=_run_many_pipe, args=(snippet, tests, child_conn), daemon=True)
+    p = ctx.Process(target=_run_test_pipe, args=(snippet, test_stmt, child_conn), daemon=True)
     p.start()
     child_conn.close()
 
@@ -84,12 +132,10 @@ def _check_snippet_many(snippet: str, tests: list[str], t_limit: int, spawn_slac
                 res = None
 
         if res is None:
-            if p.is_alive():
-                p.terminate()
-            res = [False] * len(tests)
+            res = False
     finally:
         try:
-            p.join(timeout=0.5)
+            _cleanup_process_group(p, grace=0.2)
         except Exception:
             pass
         try:
@@ -97,7 +143,11 @@ def _check_snippet_many(snippet: str, tests: list[str], t_limit: int, spawn_slac
         except Exception:
             pass
 
-    return [bool(x) for x in res]
+    return bool(res)
+
+
+def _check_snippet_many(snippet: str, tests: list[str], t_limit: int, spawn_slack: float = 2.0) -> list[bool]:
+    return [_check_snippet_one(snippet, stmt, t_limit, spawn_slack=spawn_slack) for stmt in tests]
 
 
 from concurrent.futures import ThreadPoolExecutor
@@ -156,6 +206,7 @@ def evaluate_function_dataset(data: list[dict], n_workers: int | None = None):
 
 
 def worker_stdio(script, input_val, output_queue):
+    _enter_untrusted_process_group()
     # Create an iterator over the input lines.
     input_lines = iter(input_val.splitlines())
 
@@ -213,11 +264,12 @@ def run_scripts_with_timeout(scripts, inputs, time_limits, worker):
         now = time.time()
         for i, p in enumerate(processes):
             if p.is_alive() and now >= deadlines[i]:
-                p.terminate()
+                _cleanup_process_group(p, grace=0.2)
                 results[i] = "Timeout Error"
         time.sleep(0.001)
 
     for i, p in enumerate(processes):
+        _cleanup_process_group(p, grace=0.2)
         if results[i] is None:
             try:
                 results[i] = queues[i].get_nowait()
