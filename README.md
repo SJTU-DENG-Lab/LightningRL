@@ -30,7 +30,7 @@
   <a href="https://github.com/SJTU-DENG-Lab/LightningRL">
     <img src="https://img.shields.io/badge/GitHub-Code-black.svg?logo=github" alt="GitHub Code"/>
   </a>
-  <a href="https://huggingface.co/collections/SJTU-DENG-Lab/lightingrl-series">
+  <a href="https://huggingface.co/collections/SJTU-DENG-Lab/lightingrl">
     <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-yellow.svg" alt="Hugging Face Model"/>
   </a>
 </p>
